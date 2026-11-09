@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Onward Logistics - one-time Git sync bootstrap, deployed once by setup-gitsync.sh.
+  Creates the GitHub connection and the role CloudFormation Git sync uses to deploy
+  infrastructure/template.yaml. Nothing here runs the application.
+
+Parameters:
+  Project:
+    Type: String
+    Default: onward
+  Owner:
+    Type: String
+    Default: Jado Fils SEZIKEYE
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+
+Resources:
+  # Created as PENDING. A person approves it once in the GitHub handshake; AWS requires this.
+  GitHubConnection:
+    Type: AWS::CodeConnections::Connection
+    Properties:
+      ConnectionName: !Sub '${Project}-${Environment}-github'
+      ProviderType: GitHub
+      Tags:
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  GitSyncRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Project}-${Environment}-gitsync-role'
+      Description: Used by CloudFormation Git sync to deploy the order system stack.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudformation.sync.codeconnections.amazonaws.com }
+            Action: sts:AssumeRole
+      # PowerUserAccess covers VPC, EC2, load balancing, Auto Scaling, CloudWatch and Budgets.
+      # IAM is granted separately below, limited to this project's names.
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/PowerUserAccess'
+      Tags:
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  GitSyncOperationsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${Project}-${Environment}-gitsync-operations'
+      Description: CloudFormation change-set permissions that Git sync needs.
+      Roles: [!Ref GitSyncRole]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SyncToCloudFormation
+            Effect: Allow
+            Action:
+              - cloudformation:CreateChangeSet
+              - cloudformation:DeleteChangeSet
+              - cloudformation:DescribeChangeSet
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStacks
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:GetTemplate
+              - cloudformation:ListChangeSets
+              - cloudformation:ListStacks
+              - cloudformation:ValidateTemplate
+            Resource: '*'
+          - Sid: ManagedRules
+            Effect: Allow
+            Action: [events:PutRule, events:PutTargets]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                events:ManagedBy: cloudformation.sync.codeconnections.amazonaws.com
+          - Sid: DescribeRule
+            Effect: Allow
+            Action: events:DescribeRule
+            Resource: '*'
+
+  GitSyncIamPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${Project}-${Environment}-gitsync-iam'
+      Description: Manage only this project's server role and instance profile.
+      Roles: [!Ref GitSyncRole]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ProjectRoleAndInstanceProfile
+            Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:GetRole
+              - iam:UpdateRole
+              - iam:UpdateRoleDescription
+              - iam:UpdateAssumeRolePolicy
+              - iam:TagRole
+              - iam:UntagRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:ListAttachedRolePolicies
+              - iam:ListRolePolicies
+              - iam:PassRole
+              - iam:CreateInstanceProfile
+              - iam:DeleteInstanceProfile
+              - iam:GetInstanceProfile
+              - iam:AddRoleToInstanceProfile
+              - iam:RemoveRoleFromInstanceProfile
+              - iam:TagInstanceProfile
+              - iam:UntagInstanceProfile
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${Project}-${Environment}-orders-*'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/${Project}-${Environment}-orders-*'
+          - Sid: ServiceLinkedRoles
+            Effect: Allow
+            Action: iam:CreateServiceLinkedRole
+            Resource: '*'
+            Condition:
+              StringEquals:
+                iam:AWSServiceName:
+                  - autoscaling.amazonaws.com
+                  - elasticloadbalancing.amazonaws.com
+
+Outputs:
+  ConnectionArn:
+    Value: !Ref GitHubConnection
+  GitSyncRoleArn:
+    Value: !GetAtt GitSyncRole.Arn
