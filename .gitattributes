@@ -1,2 +1,0 @@
-# Shell scripts must keep LF endings to run on Linux runners and CloudShell.
-*.sh text eol=lf
