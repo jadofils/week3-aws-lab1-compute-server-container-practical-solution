@@ -1,82 +1,107 @@
-# Lab 1 architecture and delivery flow
+# Architecture: Onward orders on ECS Fargate with blue/green delivery
 
-This is the target architecture required by the brief: one public entry point, private ECS Fargate tasks, VPC endpoints instead of NAT, and blue/green releases. The current CloudFormation files are an older EC2 draft, so this is not yet deployed or fully implemented in IaC. Capacity values and AWS Region remain explicit inputs for cost discovery.
+Region `eu-west-1`, environment `dev`. Every resource below is defined in the [infrastructure templates](../../infrastructure/README.md) and deployed by CloudFormation Git sync.
 
-## Application delivery
+## 1. Resources inside the VPC
 
-```text
-Developer merges application change
-  -> GitHub Actions builds Java app image
-  -> GitHub OIDC exchanges a short-lived token for AWS credentials
-  -> workflow pushes immutable commit-SHA image and a release event tag to ECR
-  -> ECR image-push event reaches EventBridge
-  -> EventBridge starts CodePipeline
-  -> pipeline reads deployment descriptors from the app repository
-  -> CodeDeploy ECS blue/green action creates replacement task set
-  -> test listener and health checks verify replacement tasks
-  -> traffic shifts to new task set; alarms/health failures cause rollback
+```mermaid
+flowchart TB
+  user([Merchants and customers]) -->|HTTP :80| alb
+
+  subgraph vpc["VPC 10.0.0.0/16 · onward-dev-orders-vpc"]
+    igw[Internet gateway]
+    subgraph azA["Availability Zone A"]
+      subgraph pubA["Public subnet 10.0.0.0/24"]
+        albA[ALB node]
+      end
+      subgraph privA["Private subnet 10.0.10.0/24 · no internet route"]
+        taskA[Fargate task<br/>onward-orders :8080]
+        vpceA[Endpoint ENIs<br/>ECR API · ECR DKR · Logs]
+      end
+    end
+    subgraph azB["Availability Zone B"]
+      subgraph pubB["Public subnet 10.0.1.0/24"]
+        albB[ALB node]
+      end
+      subgraph privB["Private subnet 10.0.11.0/24 · no internet route"]
+        taskB[Fargate task<br/>onward-orders :8080]
+        vpceB[Endpoint ENIs<br/>ECR API · ECR DKR · Logs]
+      end
+    end
+    alb{{"Application Load Balancer · onward-dev-orders-alb<br/>:80 production → blue · :9000 test → green"}}
+    s3gw[(S3 gateway endpoint<br/>on private route table)]
+  end
+
+  igw --- alb
+  alb --- albA & albB
+  albA -->|app SG allows ALB SG only| taskA
+  albB --> taskB
+  taskA & taskB -->|HTTPS 443| vpceA & vpceB
+  taskA & taskB -->|image layers| s3gw
+  vpceA & vpceB -.AWS network.-> aws[(ECR · CloudWatch Logs)]
+  s3gw -.AWS network.-> s3[(S3 ECR layer bucket)]
 ```
 
-## Infrastructure delivery
+| Security rule | Where it is enforced |
+| --- | --- |
+| One public entry point | Only the ALB is in public subnets. Tasks have `AssignPublicIp: DISABLED`. |
+| No internet path for the application | The private route table has only the `local` route and the S3 gateway route. There is no NAT gateway. |
+| Tasks accept only load-balancer traffic | The app security group allows port 8080 from the ALB security group only. |
+| Endpoints accept only task traffic | The endpoint security group allows port 443 from the app security group only. |
 
-```text
-Infrastructure change merged to infrastructure repository
-  -> CloudFormation GitSync observes configured branch/template/deployment file
-  -> CloudFormation creates or updates stacks from version-controlled templates
-  -> root template creates network, security, load balancer, ECR/ECS, delivery, and monitoring resources
+## 2. Delivery pipeline: how a change reaches customers
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Dev as Engineer
+  participant GH as GitHub (app repo)
+  participant GHA as GitHub Actions
+  participant STS as AWS STS (OIDC)
+  participant S3 as S3 pipeline bucket
+  participant ECR as Amazon ECR
+  participant EB as EventBridge
+  participant CP as CodePipeline
+  participant CD as CodeDeploy
+  participant ECS as ECS service
+  participant ALB as ALB
+
+  Dev->>GH: merge pull request to main (the only manual step)
+  GH->>GHA: workflow build-and-deploy.yml
+  GHA->>GHA: mvn verify (tests)
+  GHA->>STS: OIDC token → short-lived role credentials
+  GHA->>S3: upload deploy/orders-deploy.zip (taskdef.json + appspec.yaml)
+  GHA->>ECR: push image :<commit-sha> and :release
+  ECR-->>EB: "ECR Image Action" PUSH, tag release
+  EB->>CP: StartPipelineExecution
+  CP->>CP: Source = image detail + bundle
+  CP->>CD: CodeDeployToECS (new task definition revision)
+  CD->>ECS: start green task set (private subnets)
+  CD->>ALB: test listener :9000 → green, health checks pass
+  CD->>ALB: production :80 shifts 10% → green, waits 5 min
+  alt alarms fire (5xx or unhealthy targets)
+    CD->>ALB: shift 100% back to blue (automatic rollback)
+  else healthy
+    CD->>ALB: shift 100% → green
+    CD->>ECS: keep blue 10 min for instant rollback, then terminate
+  end
 ```
 
-GitSync is configured against a specific infrastructure repository, branch, template, and stack deployment file. Keep nested templates colocated in the repository or publish them using a reproducible pipeline; ensure each child-template change updates a GitSync-tracked artifact. Do not rely on an S3 object changing by itself to trigger GitSync.
-
-## Request and private connectivity flow
+## 3. Infrastructure delivery
 
 ```mermaid
 flowchart LR
-  User[Customer browser] -->|HTTPS or lab HTTP| ALB[Internet-facing ALB<br/>public subnets, 2+ AZs]
-  ALB -->|app port only| TG[Blue or green target group]
-  TG --> TaskA[ECS Fargate task<br/>private subnet A]
-  TG --> TaskB[ECS Fargate task<br/>private subnet B]
-  TaskA -->|pull image| ECR[ECR API and DKR endpoints]
-  TaskB -->|pull image| ECR
-  TaskA -->|image layers| S3[S3 gateway endpoint]
-  TaskB -->|image layers| S3
-  TaskA -->|logs| Logs[CloudWatch Logs endpoint]
-  TaskB -->|logs| Logs
-  ALB -. health checks .-> TG
-  Scale[ECS target tracking] -->|adjust desired task count| ECS[ECS service]
-  ECS --> TaskA
-  ECS --> TaskB
-  TaskA --- ECS
-  TaskB --- ECS
-  Dev[GitHub Actions with OIDC] -->|push image| ECR
-  ECR -->|push event| EB[EventBridge]
-  EB --> Pipeline[CodePipeline]
-  Pipeline --> CD[CodeDeploy blue/green]
-  CD --> ECS
-  CFN[CloudFormation GitSync] --> Infra[CloudFormation stacks]
-  Infra --> ALB
-  Infra --> ECS
-  Infra --> ECR
-  Infra --> VPCE[VPC endpoints]
+  eng[Engineer merges to<br/>infrastructure repo main] --> gs[CloudFormation Git sync]
+  gs --> s1[1 network] --> s2[2 security and IAM] --> s3[3 VPC endpoints] --> s4[4 registry and artifacts]
+  s4 --> s5[5 load balancer] --> s6[6 ECS service] --> s7[7 delivery pipeline] --> s8[8 budget]
 ```
 
-Task security group accepts application traffic only from the ALB security group and HTTPS egress only to endpoint security groups. The private task subnets have no NAT gateway and no general internet route. The ALB is the only public application endpoint. Configure ACM/HTTPS for a real domain; plain HTTP may be used for a temporary lab demonstration if the brief allows it.
+Each numbered stack has its own deployment file in `infrastructure/deployments/`. Stacks share values through CloudFormation exports named `onward-<env>-<stack>-<Value>`. A change to a template or its deployment file is deployed when it is merged.
 
-## Blue/green deployment sequence
+## 4. Scaling and failure behaviour
 
-1. GitHub Actions builds and tags the app image with the commit SHA, then publishes it to ECR.
-2. EventBridge filters ECR `PUSH` events for the configured repository and release tag, then starts the deployment pipeline.
-3. CodePipeline combines the ECR image detail artifact with `taskdef.json` and `appspec.yaml` from the app source repository.
-4. CodeDeploy starts a replacement ECS task set in the alternate target group.
-5. The test listener and target health checks verify the replacement. CodeDeploy shifts production traffic according to the deployment configuration.
-6. CloudWatch alarms and CodeDeploy deployment settings stop or roll back an unhealthy release. Keep the previous task set available for the configured bake period.
-
-## Scaling and failure behavior
-
-ECS service auto scaling uses target tracking (for example, average CPU or ALB requests per target) with documented minimum and maximum task counts. A Fargate task failure is replaced by ECS. If an AZ fails, the service scheduler places replacement tasks in healthy AZs, subject to configured capacity. The ALB sends traffic only to healthy targets. This is application availability, not durable order storage: current demonstration orders are in-memory and disappear when a task is replaced.
-
-## Learning and cost assumptions
-
-No resource quantities are presented as a final estimate. The AWS Pricing Calculator inventory and quiet/peak assumptions are in the [discovery report](../discovery-report/README.md). Key cost drivers are Fargate task-hours and size, ALB hours/LCUs, three interface endpoint-hours, CloudWatch logs, ECR storage, data transfer, and deployment/build frequency. There is no NAT gateway in this design.
-
-The current code repository is still combined. The final hand-in should link separate application and infrastructure repositories as the client brief requires.
+- **Container failure.** The ALB stops sending to an unhealthy task, and ECS replaces it to keep the desired count.
+- **Availability Zone loss.** The other zone's task keeps serving behind the ALB. ECS starts replacements in the healthy zone, and the endpoints exist in both zones.
+- **Busy days.** CPU target tracking at 50% raises the task count from 2 up to 6, then removes tasks once load drops (120-second scale-in cooldown).
+- **Idle.** An optional schedule scales to 0 tasks at night and on weekends. Deleting the stacks removes the remaining hourly cost; see the [cost estimate](../cost/README.md).
+- **Data.** Demo orders are in memory per task. They are lost when a task is replaced and are not shared between tasks.
