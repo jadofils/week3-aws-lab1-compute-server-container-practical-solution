@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a43">
+  <title>Onward Logistics | Orders</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+<header>
+  <p class="brand">Onward Logistics</p>
+  <h1>Order desk</h1>
+  <p id="lab">Loading lab details...</p>
+</header>
+<main>
+  <div class="identity" aria-live="polite">
+    <div><strong id="student">Loading...</strong><div class="muted">Student</div></div>
+    <div class="server">This page was answered by <span id="server">checking...</span></div>
+  </div>
+
+  <div class="grid">
+    <section aria-labelledby="form-title">
+      <h2 id="form-title">Place a sample order</h2>
+      <form id="order-form">
+        <label for="customer">Customer name</label>
+        <input id="customer" name="customerName" autocomplete="name" maxlength="80" required>
+        <label for="item">Item</label>
+        <input id="item" name="item" maxlength="100" placeholder="e.g. Parcel delivery" required>
+        <label for="quantity">Quantity</label>
+        <input id="quantity" name="quantity" type="number" min="1" max="100" value="1" required>
+        <button id="submit-button" type="submit">Submit order</button>
+        <p id="message" class="notice" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+    <section aria-labelledby="orders-title">
+      <h2 id="orders-title">Recent orders</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Order</th><th>Customer and item</th><th>Qty</th><th>Server</th></tr></thead>
+          <tbody id="orders"><tr><td colspan="4" class="empty">Loading orders...</td></tr></tbody>
+        </table>
+      </div>
+      <p class="helper">Orders are held in memory on each server. Behind the load balancer, a later request may reach another server and show that server's list.</p>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section aria-labelledby="watch-title">
+      <h2 id="watch-title">Which server is answering?</h2>
+      <p class="helper">Sends one request per second through the load balancer and counts which server answered. Leave it running while capacity changes to see servers appear and disappear.</p>
+      <button id="watch-button" type="button">Start watching</button>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Server</th><th>Zone</th><th>Private IP</th><th>Answers</th><th>Last seen</th></tr></thead>
+          <tbody id="servers"><tr><td colspan="5" class="empty">Not watching yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <section aria-labelledby="spike-title">
+      <h2 id="spike-title">Sales-day CPU spike</h2>
+      <p class="helper">Keeps every CPU core busy on the servers that receive these requests, so average CPU rises above the scaling target and Auto Scaling adds servers. Each server runs at most one spike, for a limited time.</p>
+      <form id="spike-form">
+        <label for="spike-seconds">Spike length (seconds, 30 to 600)</label>
+        <input id="spike-seconds" name="seconds" type="number" min="30" max="600" value="420" required>
+        <label for="spike-requests">Requests to spread across servers</label>
+        <input id="spike-requests" name="requests" type="number" min="1" max="20" value="8" required>
+        <div class="actions">
+          <button id="spike-button" type="submit">Start spike</button>
+          <button id="stop-button" type="button" class="secondary">Stop spikes</button>
+        </div>
+        <p id="spike-message" class="notice" role="status" aria-live="polite"></p>
+      </form>
+      <ul id="spike-results" class="results"></ul>
+    </section>
+  </div>
+</main>
+<footer>Lab demonstration app. Orders are not stored in a database and should not contain real customer data.</footer>
+</body>
+</html>
