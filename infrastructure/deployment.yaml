@@ -18,9 +18,9 @@ parameters:
   # Change this to roll all servers onto a new version, one at a time.
   AppVersion: v0.1.0
 
-  # Optional cost guardrail: set an address to create the monthly budget alert.
+  # Cost guardrail: monthly budget emails at 80% actual and 100% forecast spend.
   MonthlyBudgetUsd: '200'
-  BudgetAlertEmail: ''
+  BudgetAlertEmail: sezikeyejadofils100@gmail.com
 
 tags:
   Project: onward
