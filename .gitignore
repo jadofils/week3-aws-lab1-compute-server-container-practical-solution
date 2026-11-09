@@ -7,3 +7,5 @@ app/target/
 # Local environment and logs
 .env
 *.log
+
+docs/source/*.docx
