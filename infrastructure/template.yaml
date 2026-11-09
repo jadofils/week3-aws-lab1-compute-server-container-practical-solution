@@ -1,0 +1,783 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Onward Logistics - Lab 1: Handling Sales Day Demand. One public Application Load
+  Balancer in front of an EC2 Auto Scaling group of Free Tier Amazon Linux servers in
+  private subnets across two Availability Zones. Servers reach the internet for updates
+  only outbound, through a Regional NAT Gateway. Capacity follows average CPU.
+  Deployed by CloudFormation Git sync from infrastructure/deployment.yaml.
+
+# Reading order: Parameters -> 1 Network -> 2 Security -> 2b Private copy of the app release
+#                -> 3 Load balancer -> 4 Servers and scaling -> 5 Monitoring and cost -> Outputs
+#
+# No single failure stops the service:
+#   server dies          -> ALB stops routing to it (3 failed checks), Auto Scaling replaces it
+#   Availability Zone    -> ALB, Regional NAT and servers exist in both zones; replacements launch in the healthy one
+#   GitHub / internet    -> new servers read the app from S3 via the gateway endpoint, not from GitHub
+#   bad release / boot   -> cfn-signal + rolling update stop the deploy; at least MinSize servers stay in service
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Company standards (naming and tags) }
+        Parameters: [Project, Owner, Environment]
+      - Label: { default: Network }
+        Parameters: [VpcCidr, PublicSubnetCidrA, PublicSubnetCidrB, PrivateSubnetCidrA, PrivateSubnetCidrB]
+      - Label: { default: Servers and scaling }
+        Parameters: [InstanceType, LatestAmiId, MinSize, MaxSize, CpuTargetPercent]
+      - Label: { default: Application release }
+        Parameters: [GitHubOwner, GitHubRepository, AppVersion, ApplicationPort]
+      - Label: { default: Cost guardrail }
+        Parameters: [MonthlyBudgetUsd, BudgetAlertEmail]
+
+Parameters:
+  Project:
+    Type: String
+    Default: onward
+    AllowedPattern: '^[a-z0-9-]{2,12}$'
+  Owner:
+    Type: String
+    Default: Jado Fils SEZIKEYE
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnetCidrA:
+    Type: String
+    Default: 10.0.0.0/24
+  PublicSubnetCidrB:
+    Type: String
+    Default: 10.0.1.0/24
+  PrivateSubnetCidrA:
+    Type: String
+    Default: 10.0.10.0/24
+  PrivateSubnetCidrB:
+    Type: String
+    Default: 10.0.11.0/24
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t2.micro]
+    Description: Free Tier eligible instance types only.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI, resolved at deploy time.
+  MinSize:
+    Type: Number
+    Default: 2
+    MinValue: 2
+    Description: At least one server per Availability Zone, so losing a server or a zone is not an outage.
+  MaxSize:
+    Type: Number
+    Default: 6
+    Description: Sales days bring about 3x normal demand; 6 servers caps peak spend.
+  CpuTargetPercent:
+    Type: Number
+    Default: 50
+    MinValue: 20
+    MaxValue: 80
+    Description: Average CPU the Auto Scaling group keeps servers near.
+
+  GitHubOwner:
+    Type: String
+    Default: jadofils
+  GitHubRepository:
+    Type: String
+    Default: week3-aws-lab1-compute-server-container-practical-solution
+  AppVersion:
+    Type: String
+    Default: v0.1.0
+    AllowedPattern: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+    Description: GitHub Release tag of the app JAR. Changing it rolls servers onto the new version one at a time.
+  ApplicationPort:
+    Type: Number
+    Default: 8080
+
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 200
+  BudgetAlertEmail:
+    Type: String
+    Default: ''
+    Description: Optional. When set, a monthly AWS budget emails this address at 80% actual and 100% forecast spend.
+
+Conditions:
+  CreateBudget: !Not [!Equals [!Ref BudgetAlertEmail, '']]
+
+Resources:
+  # ============================================================ 1. Network
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-vpc' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-igw' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public subnets hold only the load balancer (and the NAT gateway's public side).
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnetCidrA
+      MapPublicIpOnLaunch: false
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-public-a' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PublicSubnetCidrB
+      MapPublicIpOnLaunch: false
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-public-b' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # Private subnets hold the servers. Nothing here has a public IP.
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnetCidrA
+      MapPublicIpOnLaunch: false
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-private-a' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnetCidrB
+      MapPublicIpOnLaunch: false
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-private-b' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-public-rt' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+
+  # Regional NAT Gateway: one gateway for the whole VPC that AWS runs in every Availability
+  # Zone where there are private workloads, so outbound access survives losing a zone.
+  # It only allows connections that start from inside; the internet cannot open one inward.
+  RegionalNatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityMode: regional
+      ConnectivityType: public
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-regional-nat' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-private-rt' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref RegionalNatGateway
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetA
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetB
+
+  # S3 gateway endpoint (no charge): servers fetch the app from the private release bucket
+  # over AWS's network, so launching or replacing a server does not depend on the NAT
+  # gateway or the internet being available.
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      VpcEndpointType: Gateway
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      RouteTableIds: [!Ref PrivateRouteTable]
+
+  # ============================================================ 2. Security
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Project}-${Environment}-orders-alb-sg'
+      GroupDescription: The only public entry point - HTTP from customers to the load balancer.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: Customers and merchants.
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: Forward requests and health checks to servers inside the VPC only.
+          IpProtocol: tcp
+          FromPort: !Ref ApplicationPort
+          ToPort: !Ref ApplicationPort
+          CidrIp: !Ref VpcCidr
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-alb-sg' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # No SSH or RDP port is open. Administration uses Systems Manager Session Manager,
+  # which works over the server's outbound HTTPS connection.
+  ServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Project}-${Environment}-orders-server-sg'
+      GroupDescription: Servers accept the app port from the load balancer only. No admin ports.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: Application traffic from the load balancer only.
+          IpProtocol: tcp
+          FromPort: !Ref ApplicationPort
+          ToPort: !Ref ApplicationPort
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      SecurityGroupEgress:
+        - Description: HTTPS out through the NAT gateway (updates, app download, Systems Manager).
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: HTTP out through the NAT gateway (package mirrors that use plain HTTP).
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-server-sg' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # Role for the servers: AWS managed policy for Session Manager only. No inline policies.
+  ServerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Project}-${Environment}-orders-server-role'
+      Description: Lets order servers register with Systems Manager for Session Manager access.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Tags:
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  ServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${Project}-${Environment}-orders-server-profile'
+      Roles: [!Ref ServerRole]
+
+  # Customer managed policy (not inline): servers may only read released app versions.
+  ServerReleaseReadPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${Project}-${Environment}-orders-server-release-read'
+      Description: Read the application JAR from the private release bucket.
+      Roles: [!Ref ServerRole]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub '${ReleaseBucket.Arn}/releases/*'
+
+  # ============================================================ 2b. Private copy of the app release
+  # At deploy time a small Lambda copies the GitHub Release JAR into this private bucket.
+  # From then on, every server launch (scale-out or self-healing replacement) reads the
+  # JAR from S3 through the gateway endpoint: no dependency on GitHub at the moment it matters.
+  ReleaseBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${Project}-${Environment}-orders-releases-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-releases' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  ReleaseBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReleaseBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt ReleaseBucket.Arn
+              - !Sub '${ReleaseBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  ReleaseCopierRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Project}-${Environment}-orders-release-copier-role'
+      Description: Lets the release copier write the app JAR into the release bucket.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Tags:
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  ReleaseCopierPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${Project}-${Environment}-orders-release-copier'
+      Description: Write and remove app releases in the release bucket only.
+      Roles: [!Ref ReleaseCopierRole]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: [s3:PutObject, s3:DeleteObject]
+            Resource: !Sub '${ReleaseBucket.Arn}/releases/*'
+
+  ReleaseCopierLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${Project}-${Environment}-orders-release-copier'
+      RetentionInDays: 14
+      Tags:
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  ReleaseCopierFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: [ReleaseCopierLogGroup, ReleaseCopierPolicy]
+    Properties:
+      FunctionName: !Sub '${Project}-${Environment}-orders-release-copier'
+      Description: Copies the GitHub Release JAR into the private release bucket at deploy time.
+      Runtime: python3.12
+      Handler: index.handler
+      MemorySize: 512
+      Timeout: 120
+      Role: !GetAtt ReleaseCopierRole.Arn
+      Code:
+        ZipFile: |
+          import urllib.request
+          import boto3
+          import cfnresponse
+
+          s3 = boto3.client("s3")
+
+          def handler(event, context):
+              props = event["ResourceProperties"]
+              bucket, key = props["Bucket"], props["Key"]
+              physical_id = f"s3://{bucket}/{key}"
+              try:
+                  if event["RequestType"] in ("Create", "Update"):
+                      with urllib.request.urlopen(props["SourceUrl"], timeout=60) as response:
+                          body = response.read()
+                      if len(body) < 1_000_000:
+                          raise ValueError(f"download too small ({len(body)} bytes); is the release published?")
+                      s3.put_object(Bucket=bucket, Key=key, Body=body, ServerSideEncryption="AES256")
+                  elif event["RequestType"] == "Delete":
+                      # Remove only this version's object, so the bucket can be deleted with the stack.
+                      s3.delete_object(Bucket=bucket, Key=key)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {"S3Uri": physical_id}, physical_id)
+              except Exception as error:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_id, reason=str(error)[:250])
+      Tags:
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # One copy per AppVersion. Changing AppVersion copies the new JAR, then the launch template
+  # changes, which rolls the servers onto it one at a time.
+  AppRelease:
+    Type: Custom::AppRelease
+    Properties:
+      ServiceToken: !GetAtt ReleaseCopierFunction.Arn
+      Bucket: !Ref ReleaseBucket
+      Key: !Sub 'releases/${AppVersion}/onward-orders.jar'
+      SourceUrl: !Sub 'https://github.com/${GitHubOwner}/${GitHubRepository}/releases/download/${AppVersion}/onward-orders.jar'
+
+  # ============================================================ 3. Load balancer
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Project}-${Environment}-orders-alb'
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      SecurityGroups: [!Ref LoadBalancerSecurityGroup]
+      LoadBalancerAttributes:
+        - { Key: routing.http.drop_invalid_header_fields.enabled, Value: 'true' }
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-alb' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # Requests are shared round robin across healthy servers in both zones.
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${Project}-${Environment}-orders-tg'
+      VpcId: !Ref Vpc
+      TargetType: instance
+      Protocol: HTTP
+      Port: !Ref ApplicationPort
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      # 3 misses (about 45 s) before a server is pulled, so a server that is merely busy
+      # during a CPU spike is not mistaken for a failed one.
+      UnhealthyThresholdCount: 3
+      Matcher: { HttpCode: '200' }
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: '30' }
+        - { Key: load_balancing.algorithm.type, Value: round_robin }
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-tg' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # HTTP for the lab demo. Production would add an HTTPS listener with an ACM certificate.
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # ============================================================ 4. Servers and scaling
+  # Every server boots the same way: install Java, download the released app, start it as
+  # a service, and tell CloudFormation when it is healthy.
+  ServerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${Project}-${Environment}-orders-lt'
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+            - { Key: Project, Value: !Ref Project }
+            - { Key: Owner, Value: !Ref Owner }
+            - { Key: Environment, Value: !Ref Environment }
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt ServerInstanceProfile.Arn
+        SecurityGroupIds: [!Ref ServerSecurityGroup]
+        # 1-minute CPU metrics so scaling reacts within minutes, not after 5-minute periods.
+        Monitoring:
+          Enabled: true
+        # IMDSv2 only. The app reads its instance ID and zone from here.
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 8
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+        TagSpecifications:
+          - ResourceType: volume
+            Tags:
+              - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-server-volume' }
+              - { Key: Project, Value: !Ref Project }
+              - { Key: Owner, Value: !Ref Owner }
+              - { Key: Environment, Value: !Ref Environment }
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euxo pipefail
+            exec > >(tee /var/log/onward-orders-setup.log) 2>&1
+
+            # Outbound internet through the Regional NAT Gateway: security updates and Java.
+            dnf -y upgrade --security || true
+            dnf -y install java-21-amazon-corretto-headless aws-cfn-bootstrap
+
+            # Fetch the released application (version ${AppVersion}) from the private release
+            # bucket through the S3 gateway endpoint - no internet needed for this step.
+            useradd --system --home-dir /opt/onward --shell /sbin/nologin onward || true
+            mkdir -p /opt/onward
+            for attempt in 1 2 3 4 5; do
+              aws s3 cp "${AppRelease.S3Uri}" /opt/onward/onward-orders.jar --region ${AWS::Region} && break
+              sleep 10
+            done
+            test -s /opt/onward/onward-orders.jar
+            chown -R onward:onward /opt/onward
+
+            # Run the app as a service that restarts on failure and starts on every boot.
+            cat > /etc/systemd/system/onward-orders.service <<'UNIT'
+            [Unit]
+            Description=Onward Logistics order application
+            After=network-online.target
+            Wants=network-online.target
+
+            [Service]
+            User=onward
+            WorkingDirectory=/opt/onward
+            ExecStart=/usr/bin/java -Xms256m -Xmx512m -jar /opt/onward/onward-orders.jar --server.port=${ApplicationPort}
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            UNIT
+            systemctl daemon-reload
+            systemctl enable --now onward-orders
+
+            # Report success to CloudFormation only once the app answers its health check.
+            STATUS=1
+            for attempt in $(seq 1 60); do
+              if curl -fsS http://localhost:${ApplicationPort}/health; then STATUS=0; break; fi
+              sleep 5
+            done
+            /opt/aws/bin/cfn-signal -e $STATUS --stack ${AWS::StackName} \
+              --resource ServerAutoScalingGroup --region ${AWS::Region} || true
+
+  ServerAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    # Stack creation waits until MinSize servers report a healthy app.
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref MinSize
+        Timeout: PT15M
+    # A new AppVersion or AMI replaces servers one at a time, keeping MinSize in service.
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: !Ref MinSize
+        MaxBatchSize: 1
+        PauseTime: PT15M
+        WaitOnResourceSignals: true
+        SuspendProcesses: [HealthCheck, ReplaceUnhealthy, AZRebalance, AlarmNotification, ScheduledActions]
+    Properties:
+      AutoScalingGroupName: !Sub '${Project}-${Environment}-orders-asg'
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      VPCZoneIdentifier: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ServerLaunchTemplate
+        Version: !GetAtt ServerLaunchTemplate.LatestVersionNumber
+      TargetGroupARNs: [!Ref TargetGroup]
+      # Replace a server when the load balancer says it is unhealthy, not only when EC2 does.
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      DefaultInstanceWarmup: 180
+      MetricsCollection:
+        - Granularity: 1Minute
+          Metrics: [GroupInServiceInstances, GroupDesiredCapacity, GroupMinSize, GroupMaxSize]
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-server', PropagateAtLaunch: true }
+        - { Key: Project, Value: !Ref Project, PropagateAtLaunch: true }
+        - { Key: Owner, Value: !Ref Owner, PropagateAtLaunch: true }
+        - { Key: Environment, Value: !Ref Environment, PropagateAtLaunch: true }
+
+  # Adds servers when average CPU rises above the target and removes them when it falls.
+  CpuTargetTrackingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref ServerAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref CpuTargetPercent
+
+  # ============================================================ 5. Monitoring and cost
+  # One screen for the live review: servers in service, CPU, and requests per server.
+  OperationsDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${Project}-${Environment}-orders'
+      DashboardBody: !Sub
+        - |
+          {
+            "widgets": [
+              { "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+                "properties": { "title": "Servers in service vs desired", "region": "${AWS::Region}", "stat": "Average", "period": 60,
+                  "metrics": [
+                    ["AWS/AutoScaling", "GroupInServiceInstances", "AutoScalingGroupName", "${Asg}"],
+                    [".", "GroupDesiredCapacity", ".", "."] ] } },
+              { "type": "metric", "x": 12, "y": 0, "width": 12, "height": 6,
+                "properties": { "title": "Average CPU % (target ${CpuTargetPercent})", "region": "${AWS::Region}", "stat": "Average", "period": 60,
+                  "metrics": [ ["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", "${Asg}"] ] } },
+              { "type": "metric", "x": 0, "y": 6, "width": 12, "height": 6,
+                "properties": { "title": "Requests and healthy servers", "region": "${AWS::Region}", "period": 60,
+                  "metrics": [
+                    ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "${Alb}", { "stat": "Sum" }],
+                    ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", "${Tg}", "LoadBalancer", "${Alb}", { "stat": "Minimum", "yAxis": "right" }] ] } },
+              { "type": "metric", "x": 12, "y": 6, "width": 12, "height": 6,
+                "properties": { "title": "Errors at the load balancer", "region": "${AWS::Region}", "stat": "Sum", "period": 60,
+                  "metrics": [
+                    ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", "${Alb}"],
+                    [".", "HTTPCode_Target_5XX_Count", ".", "."] ] } }
+            ]
+          }
+        - Asg: !Ref ServerAutoScalingGroup
+          Alb: !GetAtt LoadBalancer.LoadBalancerFullName
+          Tg: !GetAtt TargetGroup.TargetGroupFullName
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: CreateBudget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${Project}-${Environment}-orders-monthly-budget'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref BudgetAlertEmail }
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref BudgetAlertEmail }
+
+Outputs:
+  ApplicationUrl:
+    Description: The one public address for merchants and customers.
+    Value: !Sub 'http://${LoadBalancer.DNSName}'
+  AutoScalingGroupName:
+    Value: !Ref ServerAutoScalingGroup
+  DashboardUrl:
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${OperationsDashboard}'
+  VpcId:
+    Value: !Ref Vpc
+  PrivateSubnetIds:
+    Value: !Join [',', [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
+  NatGatewayId:
+    Value: !Ref RegionalNatGateway
+  AppReleaseS3Uri:
+    Description: The private copy of the release each server installs at launch.
+    Value: !GetAtt AppRelease.S3Uri
+  AppReleaseSource:
+    Description: Where the release was copied from at deploy time.
+    Value: !Sub 'https://github.com/${GitHubOwner}/${GitHubRepository}/releases/download/${AppVersion}/onward-orders.jar'
