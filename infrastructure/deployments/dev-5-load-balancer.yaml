@@ -1,0 +1,11 @@
+# GitSync stack deployment file for stack onward-dev-load-balancer.
+# Paths are relative to the infrastructure repository root.
+template-file-path: templates/5-load-balancer.yaml
+parameters:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
+tags:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev

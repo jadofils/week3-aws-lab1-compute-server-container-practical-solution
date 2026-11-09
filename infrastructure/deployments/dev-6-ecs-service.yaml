@@ -1,0 +1,18 @@
+# GitSync stack deployment file for stack onward-dev-ecs-service.
+# Paths are relative to the infrastructure repository root.
+template-file-path: templates/6-ecs-service.yaml
+parameters:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
+  TaskCpu: '512'
+  TaskMemory: '1024'
+  DesiredCount: '2'
+  MinCapacity: '2'
+  MaxCapacity: '6'
+  CpuTargetPercent: '50'
+  EnableOffHoursScaleDown: 'false'
+tags:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev

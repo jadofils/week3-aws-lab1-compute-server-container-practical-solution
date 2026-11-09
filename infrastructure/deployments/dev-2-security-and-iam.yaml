@@ -1,0 +1,16 @@
+# GitSync stack deployment file for stack onward-dev-security-and-iam.
+# Paths are relative to the infrastructure repository root.
+template-file-path: templates/2-security-and-iam.yaml
+parameters:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
+  GitHubOwner: jadofils
+  GitHubAppRepository: onward-orders-app
+  GitHubBranch: main
+  CreateGitHubOidcProvider: 'true'
+  TestTrafficCidr: ''
+tags:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev

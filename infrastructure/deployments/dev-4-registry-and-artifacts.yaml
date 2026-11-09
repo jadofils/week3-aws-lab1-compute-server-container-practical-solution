@@ -1,0 +1,11 @@
+# GitSync stack deployment file for stack onward-dev-registry-and-artifacts.
+# Paths are relative to the infrastructure repository root.
+template-file-path: templates/4-registry-and-artifacts.yaml
+parameters:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
+tags:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev

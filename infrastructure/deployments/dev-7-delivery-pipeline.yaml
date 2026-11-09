@@ -1,0 +1,12 @@
+# GitSync stack deployment file for stack onward-dev-delivery-pipeline.
+# Paths are relative to the infrastructure repository root.
+template-file-path: templates/7-delivery-pipeline.yaml
+parameters:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
+  DeploymentConfigName: CodeDeployDefault.ECSCanary10Percent5Minutes
+tags:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
