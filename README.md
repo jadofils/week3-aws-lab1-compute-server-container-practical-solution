@@ -5,7 +5,8 @@ Java Spring Boot full-stack order demo and CloudFormation infrastructure for the
 ## Project layout
 
 - `app/` contains the browser UI and Java REST backend.
-- `infrastructure/` will contain the AWS CloudFormation template and parameters.
+- `infrastructure/templates/` contains the numbered, comment-only CloudFormation learning worksheets; see its README for the flow.
+- `infrastructure/` will also contain deployment parameters and the artifact publishing automation needed for nested templates.
 - `docs/architecture/` will contain the architecture diagram source.
 - `docs/decisions/` will record design choices and reasons.
 - `docs/cost/` will hold the resource inventory and quiet-day/peak-day AWS Pricing Calculator assumptions.
@@ -14,6 +15,8 @@ Java Spring Boot full-stack order demo and CloudFormation infrastructure for the
 All AWS resources will be defined in CloudFormation and deployed from version control using CloudFormation GitSync. The cost calculator will be used for estimates; its resource and usage assumptions will be kept in `docs/cost/`.
 
 See `app/README.md` for local app instructions and API behavior.
+
+[Numbered CloudFormation learning steps](infrastructure/templates/README.md)
 ## Documentation
 
 - [Lab 1 documentation index](docs/README.md)

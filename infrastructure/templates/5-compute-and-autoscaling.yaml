@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Compute capacity for the Onward Logistics application
+
+# This stack receives networking, security, load-balancer, and artifact details
+# from the root stack so it can launch the app without creating shared resources.
+Parameters:
+  Project:
+    Type: String
+
+  Owner:
+    Type: String
+
+  Environment:
+    Type: String
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+
+  ApplicationSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  EC2InstanceProfileName:
+    Type: String
+
+  TargetGroupArn:
+    Type: String
+
+  ArtifactBucketName:
+    Type: String
+
+  AppArtifactKey:
+    Type: String
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+  # These are initial learning assumptions. Revisit them in the cost discovery.
+  InstanceType:
+    Type: String
+    Default: t3.micro
+
+  ApplicationPort:
+    Type: Number
+    Default: 8080
+
+  MinSize:
+    Type: Number
+    Default: 2
+
+  DesiredCapacity:
+    Type: Number
+    Default: 2
+
+  MaxSize:
+    Type: Number
+    Default: 4
+
+  CpuTarget:
+    Type: Number
+    Default: 50
+
+Resources:
+  # The launch template defines the repeatable EC2 configuration used by the ASG.
+  ApplicationLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Name: !Ref EC2InstanceProfileName
+        SecurityGroupIds:
+          - !Ref ApplicationSecurityGroupId
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 8
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+
+        # User data installs the Java runtime, downloads the versioned app artifact,
+        # and configures systemd to start the Spring Boot service after boot.
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euxo pipefail
+
+            dnf install -y java-21-amazon-corretto-headless awscli-2
+
+            mkdir -p /opt/onward
+            aws s3 cp "s3://${ArtifactBucketName}/${AppArtifactKey}" \
+              /opt/onward/onward-orders.jar \
+              --region ${AWS::Region}
+
+            cat > /etc/systemd/system/onward-orders.service <<'SERVICE'
+            [Unit]
+            Description=Onward Logistics Orders Application
+            After=network-online.target
+            Wants=network-online.target
+
+            [Service]
+            User=ec2-user
+            WorkingDirectory=/opt/onward
+            ExecStart=/usr/bin/java -jar /opt/onward/onward-orders.jar --server.port=${ApplicationPort}
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            SERVICE
+
+            chown -R ec2-user:ec2-user /opt/onward
+            systemctl daemon-reload
+            systemctl enable --now onward-orders
+
+  # The ASG maintains the requested number of instances across private subnets
+  # and registers them with the load balancer target group.
+  ApplicationAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: !Ref MinSize
+      DesiredCapacity: !Ref DesiredCapacity
+      MaxSize: !Ref MaxSize
+      VPCZoneIdentifier: !Ref PrivateSubnetIds
+      TargetGroupARNs:
+        - !Ref TargetGroupArn
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ApplicationLaunchTemplate
+        Version: !GetAtt ApplicationLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+          PropagateAtLaunch: true
+        - Key: Owner
+          Value: !Ref Owner
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref Environment
+          PropagateAtLaunch: true
+
+  # Target tracking asks Auto Scaling to add or remove instances around
+  # the chosen average CPU utilization target.
+  CpuTargetTrackingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref ApplicationAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref CpuTarget
+
+Outputs:
+  # These outputs make the created compute resources visible to the root stack.
+  AutoScalingGroupName:
+    Description: Name of the application Auto Scaling group
+    Value: !Ref ApplicationAutoScalingGroup
+
+  LaunchTemplateId:
+    Description: ID of the EC2 launch template
+    Value: !Ref ApplicationLaunchTemplate

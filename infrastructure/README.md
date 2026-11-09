@@ -1,3 +1,3 @@
-# Infrastructure as code
+# Infrastructure learning outline
 
-The CloudFormation template will be completed after the Lab 1 resource inventory, architecture decisions, and AWS Pricing Calculator assumptions are defined. Do not connect GitSync to the current placeholder template yet.
+Start with the [numbered CloudFormation learning steps](templates/README.md). The YAML files contain draft CloudFormation code with block comments to explain each stack. Review the child parameter and output names, template publishing path, and cost assumptions before deployment.
