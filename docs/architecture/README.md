@@ -1,126 +1,82 @@
-# Lab 1 architecture and flow
+# Lab 1 architecture and delivery flow
 
-This page shows how the code, CloudFormation deployment, network, application requests, and automatic scaling fit together. Resource quantities and scaling thresholds remain design inputs; we will set them before the AWS Pricing Calculator estimate.
+This is the target architecture required by the brief: one public entry point, private ECS Fargate tasks, VPC endpoints instead of NAT, and blue/green releases. The current CloudFormation files are an older EC2 draft, so this is not yet deployed or fully implemented in IaC. Capacity values and AWS Region remain explicit inputs for cost discovery.
 
-## 1. Infrastructure deployment flow
-
-```text
-Developer updates infrastructure/template.yaml
-    -> commits and pushes the change to the version-controlled GitHub repository
-    -> CloudFormation GitSync detects the repository update
-    -> CloudFormation validates and creates or updates the stack
-    -> networking is created before compute and traffic resources
-```
-
-CloudFormation resource sequence:
+## Application delivery
 
 ```text
-1. Create the VPC.
-2. Create public and private subnets in two Availability Zones.
-3. Attach the Internet Gateway and set up public subnet routes.
-4. Create the Regional NAT Gateway and private subnet outbound routes.
-5. Create the load balancer and application security groups.
-6. Create the target group and Application Load Balancer listener.
-7. Create the EC2 instance role and instance profile using managed policies.
-8. Create the launch template with the Amazon Linux image, instance type, security group, and startup script.
-9. Create the Auto Scaling group across the private subnets and attach it to the target group.
-10. Add the target tracking policy and monitoring configuration.
+Developer merges application change
+  -> GitHub Actions builds Java app image
+  -> GitHub OIDC exchanges a short-lived token for AWS credentials
+  -> workflow pushes immutable commit-SHA image and a release event tag to ECR
+  -> ECR image-push event reaches EventBridge
+  -> EventBridge starts CodePipeline
+  -> pipeline reads deployment descriptors from the app repository
+  -> CodeDeploy ECS blue/green action creates replacement task set
+  -> test listener and health checks verify replacement tasks
+  -> traffic shifts to new task set; alarms/health failures cause rollback
 ```
 
-All resources will have the required names and tags where supported. IAM permissions will use roles and managed policies; no inline policies will be used.
-
-## 2. Instance startup flow
+## Infrastructure delivery
 
 ```text
-WHEN Auto Scaling launches an instance:
-    choose a private subnet in an enabled Availability Zone
-    do not assign a public IP address
-    attach the EC2 instance role
-    run the launch template user data:
-        install the Java runtime
-        obtain the versioned application package from the configured artifact source
-        install the package and create its service configuration
-        start the Spring Boot service automatically
-    load balancer checks GET /health
-    WHEN the health check succeeds:
-        mark the instance healthy and allow it to receive requests
+Infrastructure change merged to infrastructure repository
+  -> CloudFormation GitSync observes configured branch/template/deployment file
+  -> CloudFormation creates or updates stacks from version-controlled templates
+  -> root template creates network, security, load balancer, ECR/ECS, delivery, and monitoring resources
 ```
 
-**Open implementation decision:** the exact code-based artifact source and build step still need to be selected. A new EC2 instance must be able to obtain the same application version without a manually copied file or a long-lived GitHub credential.
+GitSync is configured against a specific infrastructure repository, branch, template, and stack deployment file. Keep nested templates colocated in the repository or publish them using a reproducible pipeline; ensure each child-template change updates a GitSync-tracked artifact. Do not rely on an S3 object changing by itself to trigger GitSync.
 
-## 3. Customer request flow
-
-```text
-Customer browser
-    -> one public Application Load Balancer address
-    -> listener forwards the request to the target group
-    -> target group selects a healthy private EC2 instance
-    -> Spring Boot serves the page or processes the order request
-    -> response includes the serving instance ID
-    -> load balancer returns the response to the browser
-```
-
-The application security group will allow the application port only from the load balancer security group. EC2 instances will not accept direct public traffic. Outbound updates from private instances will use the Regional NAT Gateway. Administration will use Systems Manager rather than an internet-facing SSH/RDP port.
-
-## 4. Automatic scaling and recovery
-
-```text
-CloudWatch observes the Auto Scaling group's average CPU utilization.
-
-IF utilization stays above the chosen target:
-    Auto Scaling increases desired capacity, up to the configured maximum
-    the new instance runs its startup script
-    the load balancer waits for its health check to pass
-    the healthy instance begins receiving requests
-
-IF utilization stays below the target after demand falls:
-    Auto Scaling reduces capacity gradually
-    capacity never drops below the configured minimum
-
-IF an instance fails its health checks:
-    the load balancer stops routing requests to it
-    Auto Scaling replaces the failed instance
-
-IF an Availability Zone is unavailable:
-    the load balancer routes to healthy targets in the remaining enabled zone(s)
-    Auto Scaling restores the required capacity in available zones, subject to capacity limits
-```
-
-The initial design assumption is at least one application instance in each of two Availability Zones. Minimum and maximum capacity, CPU target, and instance type remain to be finalized and included in the cost scenarios.
-
-## 5. Flowchart
+## Request and private connectivity flow
 
 ```mermaid
-flowchart TB
-    Dev[Developer] -->|commit template| Repo[GitHub repository]
-    Repo -->|GitSync detects update| Sync[CloudFormation GitSync]
-    Sync --> Stack[CloudFormation stack]
-    Stack --> Net[VPC, subnets, routes, Internet Gateway, Regional NAT Gateway]
-    Stack --> LB[Public Application Load Balancer and target group]
-    Stack --> ASG[Private EC2 Auto Scaling group]
-    Stack --> IAM[Instance role, profile, and managed policies]
-    IAM --> ASG
-    Net --> LB
-    Net --> ASG
-    ASG --> Boot[Launch template user data installs and starts Spring Boot]
-    Boot --> Health[Target health check: GET /health]
-    Health -->|healthy| TG[Healthy targets]
-    Browser[Customer browser] -->|single public address| LB
-    LB --> TG
-    TG --> AppA[Private app instance A]
-    TG --> AppB[Private app instance B]
-    AppA -->|page/API response with server ID| Browser
-    AppB -->|page/API response with server ID| Browser
-    AppA -->|outbound updates| NAT[Regional NAT Gateway]
-    AppB -->|outbound updates| NAT
-    NAT --> Internet[Internet]
-    AppA --> Metrics[CloudWatch metrics and logs]
-    AppB --> Metrics
-    Metrics --> Scale[Target tracking scaling policy]
-    Scale --> ASG
-    Ops[Operations via Systems Manager] --> ASG
+flowchart LR
+  User[Customer browser] -->|HTTPS or lab HTTP| ALB[Internet-facing ALB<br/>public subnets, 2+ AZs]
+  ALB -->|app port only| TG[Blue or green target group]
+  TG --> TaskA[ECS Fargate task<br/>private subnet A]
+  TG --> TaskB[ECS Fargate task<br/>private subnet B]
+  TaskA -->|pull image| ECR[ECR API and DKR endpoints]
+  TaskB -->|pull image| ECR
+  TaskA -->|image layers| S3[S3 gateway endpoint]
+  TaskB -->|image layers| S3
+  TaskA -->|logs| Logs[CloudWatch Logs endpoint]
+  TaskB -->|logs| Logs
+  ALB -. health checks .-> TG
+  Scale[ECS target tracking] -->|adjust desired task count| ECS[ECS service]
+  ECS --> TaskA
+  ECS --> TaskB
+  TaskA --- ECS
+  TaskB --- ECS
+  Dev[GitHub Actions with OIDC] -->|push image| ECR
+  ECR -->|push event| EB[EventBridge]
+  EB --> Pipeline[CodePipeline]
+  Pipeline --> CD[CodeDeploy blue/green]
+  CD --> ECS
+  CFN[CloudFormation GitSync] --> Infra[CloudFormation stacks]
+  Infra --> ALB
+  Infra --> ECS
+  Infra --> ECR
+  Infra --> VPCE[VPC endpoints]
 ```
 
-## 6. Application behavior and limits
+Task security group accepts application traffic only from the ALB security group and HTTPS egress only to endpoint security groups. The private task subnets have no NAT gateway and no general internet route. The ALB is the only public application endpoint. Configure ACM/HTTPS for a real domain; plain HTTP may be used for a temporary lab demonstration if the brief allows it.
 
-The demo exposes `GET /api/info`, `GET /api/orders`, `POST /api/orders`, and `GET /health`. Each response identifies the server that handled it. Sample orders are held only in that server's memory: they are temporary and not shared between EC2 instances. Durable shared order storage is outside this demo's current scope.
+## Blue/green deployment sequence
+
+1. GitHub Actions builds and tags the app image with the commit SHA, then publishes it to ECR.
+2. EventBridge filters ECR `PUSH` events for the configured repository and release tag, then starts the deployment pipeline.
+3. CodePipeline combines the ECR image detail artifact with `taskdef.json` and `appspec.yaml` from the app source repository.
+4. CodeDeploy starts a replacement ECS task set in the alternate target group.
+5. The test listener and target health checks verify the replacement. CodeDeploy shifts production traffic according to the deployment configuration.
+6. CloudWatch alarms and CodeDeploy deployment settings stop or roll back an unhealthy release. Keep the previous task set available for the configured bake period.
+
+## Scaling and failure behavior
+
+ECS service auto scaling uses target tracking (for example, average CPU or ALB requests per target) with documented minimum and maximum task counts. A Fargate task failure is replaced by ECS. If an AZ fails, the service scheduler places replacement tasks in healthy AZs, subject to configured capacity. The ALB sends traffic only to healthy targets. This is application availability, not durable order storage: current demonstration orders are in-memory and disappear when a task is replaced.
+
+## Learning and cost assumptions
+
+No resource quantities are presented as a final estimate. The AWS Pricing Calculator inventory and quiet/peak assumptions are in the [discovery report](../discovery-report/README.md). Key cost drivers are Fargate task-hours and size, ALB hours/LCUs, three interface endpoint-hours, CloudWatch logs, ECR storage, data transfer, and deployment/build frequency. There is no NAT gateway in this design.
+
+The current code repository is still combined. The final hand-in should link separate application and infrastructure repositories as the client brief requires.

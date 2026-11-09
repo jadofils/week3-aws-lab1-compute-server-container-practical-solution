@@ -1,28 +1,26 @@
-# Numbered CloudFormation learning steps
+# CloudFormation template status
 
-These files are draft CloudFormation learning templates with block comments explaining the major sections. They show how the infrastructure stacks are intended to connect. The parameter and output names, S3 publishing path, artifact publishing process, and cost assumptions still need to be reconciled before deployment.
+The numbered CloudFormation files currently in this directory are an earlier EC2 and NAT Gateway draft. They do **not** meet Lab 1's required ECS Fargate, private VPC endpoint, ECR, EventBridge, CodePipeline, or CodeDeploy blue/green requirements. Do not deploy that draft or treat it as the proposed architecture.
 
-## How the numbered flow works
+The replacement stack flow must be implemented before deployment:
 
-1. `0-artifact-store-bootstrap.yaml` is a small independent stack. It creates the private S3 store needed for nested templates and the app package.
-2. A code-based publishing step uploads the child templates to a versioned S3 prefix. A change to a child template must also cause GitSync to see a change to its configured template or deployment file.
-3. `1-main-root-stack.yaml` is the root template. It holds shared parameters and tags, then creates the child stacks.
-4. Child templates `2` through `6` define network, security/IAM, load balancing, compute/scaling, and operations. The root passes outputs from earlier children into later ones.
+1. `0-artifact-store-bootstrap.yaml` — optional bootstrap only for packaging nested templates; it must not store a manually managed application JAR.
+2. `1-main-root-stack.yaml` — shared project parameters/tags and nested stack wiring.
+3. `2-network.yaml` — VPC, two public ALB subnets, two private task subnets, no NAT, no general internet route, and ECR API/DKR, S3 gateway, and CloudWatch Logs endpoints.
+4. `3-security-and-iam.yaml` — ALB/task/endpoint security groups, ECS task execution and task roles, and GitHub Actions OIDC role. Attach managed policies; do not add inline role policies.
+5. `4-load-balancer.yaml` — internet-facing ALB, production and test listeners, and blue/green IP target groups.
+6. `5-compute-and-autoscaling.yaml` — ECR repository, ECS cluster, Fargate task definition/service, `CODE_DEPLOY` deployment controller, and ECS target-tracking scaling.
+7. `6-operations-and-monitoring.yaml` — CodeDeploy application/deployment group, CodePipeline, EventBridge ECR push rule, CloudWatch alarms/log group, and permissions for pipeline/deployment invocation.
 
-The filenames show the learning/dependency order. CloudFormation does not deploy files just because their names are numbered: the root template's nested-stack references and dependencies control stack creation. GitSync must be configured for the root template and its deployment file.
+CloudFormation GitSync must track the infrastructure repository's configured branch, template, and deployment file. Nested templates must be made available to CloudFormation by a repeatable code-based publishing mechanism, and each update must touch a tracked GitSync input. Do not assume that changing an S3 object alone triggers GitSync.
 
-## Flow in pseudocode
+The root parameter list should include repository/connection identifiers, AWS Region assumptions, image repository name, environment, task CPU/memory, desired/minimum/maximum tasks, and scaling target. Keep task sizing and run-time assumptions open for AWS Pricing Calculator work. This repository is not yet split: the app repository must contain the workflow, Dockerfile, `taskdef.json`, and `appspec.yaml`; the infrastructure repository must contain these CloudFormation templates and GitSync deployment definition.
 
-```text
-GitHub commit
-  -> GitSync sees the configured root template or deployment-file change
-  -> root stack reads shared parameters and tags
-  -> root creates the network child stack
-  -> root passes VPC and subnet outputs to security and load-balancer children
-  -> root passes private subnets, app security group, IAM profile, and target group to compute child
-  -> EC2 instances start the app and pass the /health check
-  -> ALB sends customer requests to healthy app instances
-  -> CloudWatch metrics drive Auto Scaling; failed instances are replaced
-```
+## Current app deployment artifacts
 
-The numbered filenames show the learning and dependency order. Treat capacity values and other defaults as initial assumptions for the later AWS Pricing Calculator review.
+- [`app/Dockerfile`](../../app/Dockerfile) builds and runs the Java Spring Boot full-stack app as a non-root container.
+- [`app/taskdef.json`](../../app/taskdef.json) is a CodePipeline task definition substitution template.
+- [`app/appspec.yaml`](../../app/appspec.yaml) directs CodeDeploy to update the ECS service target.
+- [`app/build-and-push-ecr.yml`](../../app/build-and-push-ecr.yml) is the GitHub Actions workflow source; move it to `.github/workflows/build-and-push-ecr.yml` at the root of the separate app repository and configure the three repository variables documented in that file.
+
+The infrastructure templates remain an implementation task; architecture and discovery docs describe the required target design, not a claim that it is already deployable.

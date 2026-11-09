@@ -1,78 +1,73 @@
 # Lab 1 Discovery Report
 
-Handling Sales Day Demand for the Onward Logistics Order System
+**Handling sales-day demand for the Onward Logistics order system**
 
-| Report detail | Value |
+| Detail | Value |
 | --- | --- |
 | Name | Jado Fils SEZIKEYE |
-| Date | 9 November 2026 |
 | Client | Onward Logistics |
-| Assigned application language | Java |
+| Application language | Java (Spring Boot, full-stack web application) |
+| Date | 9 November 2026 |
 
-This report frames the sales-day reliability and cost problem before implementation. The proposed direction is a private, multi-AZ EC2 Auto Scaling design behind one public Application Load Balancer. We will complete the quiet-day and peak-day cost comparison in the AWS Pricing Calculator after the resource inventory and usage assumptions are agreed.
+## What we found
 
-# 1. What we found
+The current order application runs as one full-stack container. Sales-day demand can reach three times normal demand. The client needs the service to stay available through a container or Availability Zone failure, scale with demand, keep the application private, and make a code merge the only manual release step. The rollback path should be quick and understandable to a new engineer.
 
-## The client's need
+The infrastructure and deployment must be repeatable as code. CloudFormation GitSync deploys infrastructure changes. GitHub Actions builds and publishes the application image to Amazon ECR using GitHub OIDC. An ECR image-push event starts CodePipeline, which deploys to Amazon ECS on AWS Fargate with AWS CodeDeploy blue/green traffic shifting. The app and infrastructure ultimately belong in separate GitHub repositories.
 
-Onward Logistics needs its order system to remain responsive when sales-day demand triples, recover automatically from server or Availability Zone failure, keep application servers private, and avoid paying for peak capacity during quiet periods.
+## Options considered
 
-## Solutions that exist
-
-| Solution | How it works | Trade-off for Onward Logistics |
+| Option | Benefits | Trade-offs |
 | --- | --- | --- |
-| Fixed EC2 capacity sized for peak | Keep a fixed fleet large enough for the busiest expected day. | Simple to understand, but idle capacity costs money on ordinary days; sizing for normal demand risks slow pages and errors at peaks. |
-| EC2 Auto Scaling behind an Application Load Balancer | Spread requests across healthy EC2 targets and add or remove instances as a CloudWatch utilization metric changes. | Fits the required EC2 design and can balance resilience with cost. Requires careful minimum, maximum, health-check, and scaling settings. |
-| Managed serverless or container platform | Run the application on a managed compute service that adjusts capacity without managing individual EC2 servers. | Can reduce server administration, but changes the assigned EC2 learning objective and would require reworking the application and deployment design. |
+| Fixed container capacity sized for peak | Simple capacity behavior. | Pays for peak capacity during quiet periods and can still be undersized if demand exceeds the forecast. |
+| ECS Fargate with target tracking and blue/green deployment | Managed container compute, automatic capacity adjustment, and controlled traffic shifting with rollback support. | Requires clear task scaling targets, deployment alarms, and capacity/cost assumptions. |
+| EC2 Auto Scaling | Familiar server-based scaling and control over hosts. | Adds host patching and administration and does not match the lab's required Fargate design. |
 
-## What happens if the problem stays unsolved
+## Recommended design and business value
 
-The lab scenario records that last year’s peak caused slow pages and errors, costing merchants and customer trust. If the system remains unchanged, another surge could delay or fail order submission when demand is highest. Staff may have to intervene during the event, while keeping a permanently oversized fleet would spend money during quiet periods. The client profile also identifies customer trust, thin delivery margins, and audit readiness as business priorities.
+Use an internet-facing Application Load Balancer across two or more Availability Zones. It is the only public application entry point. It forwards to an ECS Fargate service whose tasks run in private subnets with public IP assignment disabled. Configure ECS target tracking to scale task count, with a minimum of two tasks across Availability Zones and bounded maximum capacity. Use an ECS deployment controller of `CODE_DEPLOY`, two target groups, production and test listeners, and CodeDeploy blue/green deployments with health checks and automatic rollback alarms.
 
-# 2. Business value of the proposed solution
+There is no NAT gateway and no general internet route from task subnets. Private connectivity uses VPC endpoints: ECR API and Docker Registry interface endpoints, an S3 gateway endpoint for image layers, and CloudWatch Logs interface endpoint for task logs. Add Secrets Manager or Systems Manager endpoints only if the chosen application configuration actually uses those services. ECR image publishing occurs from GitHub Actions using OIDC; it does not require task subnets to reach GitHub.
 
-## Chosen approach
+CloudFormation defines VPC, subnets, endpoints, security groups, ALB, ECR, ECS, IAM roles, scaling, CodeDeploy, CodePipeline, EventBridge, and monitoring. CloudFormation GitSync tracks the infrastructure repository. Do not create infrastructure manually in the console. IAM access is granted through roles and attached managed policies; no inline policies are used. Apply `Project=onward`, `Owner=Jado Fils SEZIKEYE`, and `Environment=<environment>` tags where supported, and use names following `onward-<environment>-<purpose>`.
 
-Use an internet-facing Application Load Balancer across at least two Availability Zones, with an Auto Scaling group of Amazon Linux EC2 instances in private subnets. Instances launch from a CloudFormation launch template that installs and starts the single full-stack app automatically. A target-tracking policy based on average CPU utilization is the initial scaling candidate; the final target and group limits will be set after the workload and demonstration plan are defined. Load-balancer health checks and Auto Scaling health replacement will route around failed instances and restore capacity. A Regional NAT Gateway will provide outbound internet access as required by the lab. Systems Manager Session Manager is the candidate for secure administration without opening inbound admin ports.
+| Need | Evidence for review |
+| --- | --- |
+| Single public entry and private app | ALB public DNS works; task ENIs have no public IP and task security group accepts app traffic only from the ALB security group. |
+| Resilience and automatic scaling | Tasks are placed across AZs; ECS service desired count changes under load; stopped task is replaced; ALB health checks remove unhealthy targets. |
+| Safe releases and fast rollback | CodeDeploy shifts traffic between target groups; deployment alarms or failed health checks trigger rollback. |
+| AWS-only runtime connectivity | Task subnet route tables have no NAT/default internet route; ECR and logs access uses VPC endpoints. |
+| Repeatable infrastructure | GitSync stack deployment records and the version-controlled CloudFormation source. |
+| Low idle spend | ECS scales to its configured minimum; compare quiet and peak task-hours, ALB, endpoints, logs, ECR storage, and data transfer. |
 
-CloudFormation will define the infrastructure and be deployed from a version-controlled repository through CloudFormation GitSync. Resource names will follow onward-dev-purpose (or the selected environment), and supported resources will carry Project=onward, Owner=Jado Fils SEZIKEYE, and Environment tags. IAM will use roles with attached managed policies; the template will contain no inline policies.
+## Resource inventory for AWS Pricing Calculator
 
-## AWS services and their jobs
+Complete the calculator only after choosing Region, run duration, task sizing, and load assumptions. Model at least a quiet case and a three-times-demand peak case.
 
-| Service | Job in the design | Why it fits |
-| --- | --- | --- |
-| Amazon VPC, subnets, route tables, Internet Gateway | Separate public load-balancer subnets from private application subnets across AZs. | Enforces the public-entry/private-server boundary. |
-| Regional NAT Gateway | Allow private EC2 instances to reach the internet for operating-system or application updates. | Meets the mandatory outbound-access design while keeping instances without public IPs. |
-| Application Load Balancer | Provide one public application entry and send requests to healthy EC2 targets. | Spreads traffic and supports target health checks and server-identification demonstrations. |
-| Amazon EC2 and EC2 Auto Scaling | Run the full-stack app and change instance count with demand; replace unhealthy capacity. | Required compute model; supports automatic scale-out and scale-in. |
-| Amazon CloudWatch | Provide EC2 metrics, scaling signals, and application/instance logs. | Makes scaling and operational behavior observable. |
-| AWS Systems Manager Session Manager | Provide controlled remote administration without public SSH/RDP access. | Supports the security requirement to avoid opening admin ports. |
-| AWS Identity and Access Management | Give instances and deployment services only required permissions through roles. | Supports least privilege and the no-inline-policy rule. |
-| AWS CloudFormation with GitSync | Define and deploy the infrastructure from version control. | Makes the environment repeatable and reviewable as required. |
+| Resource | Inputs to decide and price |
+| --- | --- |
+| ECS Fargate tasks | vCPU and memory per task, minimum/desired/maximum task count, Linux architecture, task-hours in quiet and peak periods. |
+| Application Load Balancer | Hours running, processed bytes or LCUs, number of listeners and target groups. |
+| VPC endpoints | ECR API endpoint-hours, ECR DKR endpoint-hours, CloudWatch Logs endpoint-hours, endpoint data processing; S3 gateway endpoint has no hourly charge but review regional transfer charges. |
+| Amazon ECR | Stored image GB-months, image push/pull volume, lifecycle retention. |
+| CloudWatch | Log ingestion and retention, metrics, alarms, dashboards if used. |
+| CodePipeline / CodeDeploy / EventBridge | Pipeline executions, deployment frequency, pipeline type and applicable service pricing for the selected Region. |
+| VPC / data transfer | Public IPv4 addresses used by the ALB, inter-AZ data transfer, internet data transfer delivered by the ALB. |
+| CloudFormation GitSync and GitHub Actions | Confirm service charges, runner type/minutes, and any GitHub plan limits separately from AWS resource estimate. |
 
-## Who benefits and how we will know
+Do not price a NAT gateway: the design requirement is VPC endpoints instead. Do not add a database to this lab demo without a confirmed persistence requirement. The current app stores sample orders in process memory, so data is temporary and not shared across tasks; production persistence needs a separate client decision and estimate.
 
-| Stakeholder | Benefit | Observable evidence |
-| --- | --- | --- |
-| Chief Technology Officer | Capacity responds to a traffic surge without manual resizing, then returns toward the normal level. | Auto Scaling group desired capacity rises during load and falls after load; application remains reachable. |
-| Head of Security | Customers enter through the load balancer; application instances have no direct public reachability or open admin ports. | Subnets, public-IP settings, security-group rules, and a direct-instance reachability check. |
-| Head of Operations | Failed instances are replaced, requests use healthy targets across AZs, and responders can identify the instance serving a request. | Target health, Auto Scaling activity history, AZ placement, logs, and server identity shown by the app. |
-| Finance Lead | Capacity is not held at peak size all month, and costs are compared for quiet and peak usage. | AWS Pricing Calculator scenarios with explicit resource counts, hours, and data assumptions. |
+## Repository and deliverables status
 
-## Cost discovery and design limits
+The current Git repository combines app and infrastructure work for learning. The client deliverable calls for separate app and infrastructure repositories; create/publish those repositories and move the corresponding folders as a follow-up before claiming that requirement complete. Link the completed report, both repositories, the architecture diagram, and the demonstration recording or review in the final hand-in.
 
-Cost discovery is a required next step after the complete resource list is defined. We will enter the selected AWS Region, instance type and count, load-balancer hours and traffic, Regional NAT Gateway hours and data processing, storage, monitoring, and expected run duration into the AWS Pricing Calculator. We will compare a quiet-day case with a peak-day case and record the assumptions and alternatives. EC2 Free Tier eligibility must be checked against the selected account, Region, and current offer; it does not make every supporting resource free.
+## References
 
-The estimate will depend on workload duration, data transfer, NAT processing, and the final Region. CPU may not represent every source of application demand, so the scaling metric must be checked during the load demonstration. The design assumes the demonstration application can run on more than one instance without local-only order state; durable shared order storage is not specified in the supplied lab brief and must be confirmed before adding database resources or estimating their cost. A Regional NAT Gateway is mandated, so its cost and outbound dependency remain part of the design.
-
-## Sources
-
-- Lab 1 problem description supplied with the course materials.
-- [Client Profile: Onward Logistics](../client-profile/README.md).
-- [Discovery Report Template](template.md).
-- [Target tracking scaling policies for Amazon EC2 Auto Scaling](https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-scaling-target-tracking.html).
-- [Health checks for Application Load Balancer target groups](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html).
-- [How Elastic Load Balancing works](https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html).
-- [Regional NAT gateways for automatic multi-AZ expansion](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateways-regional.html).
-
-The editable completed report is in [`../source/completed-discovery-report.docx`](../source/completed-discovery-report.docx).
+- Lab 1 problem description and client profile supplied with the course.
+- [ECR interface VPC endpoints and S3 image-layer endpoint](https://docs.aws.amazon.com/AmazonECR/latest/userguide/vpc-endpoints.html)
+- [ECS private VPC connectivity](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/networking-connecting-vpc.html)
+- [ECS blue/green deployment with CodeDeploy](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-type-bluegreen.html)
+- [CodePipeline ECS blue/green action](https://docs.aws.amazon.com/codepipeline/latest/userguide/action-reference-ECSbluegreen.html)
+- [ECR image push event as a CodePipeline source](https://docs.aws.amazon.com/codepipeline/latest/userguide/create-cwe-ecr-source.html)
+- [GitHub Actions OIDC in AWS](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)
+- [CloudFormation GitSync concepts](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/git-sync-concepts-terms.html)
