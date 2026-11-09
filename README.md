@@ -14,3 +14,8 @@ Java Spring Boot full-stack order demo and CloudFormation infrastructure for the
 All AWS resources will be defined in CloudFormation and deployed from version control using CloudFormation GitSync. The cost calculator will be used for estimates; its resource and usage assumptions will be kept in `docs/cost/`.
 
 See `app/README.md` for local app instructions and API behavior.
+## Documentation
+
+- [Lab 1 documentation index](docs/README.md)
+- [Client profile and needs](docs/client-profile/README.md)
+- [Completed discovery report](docs/discovery-report/README.md)
