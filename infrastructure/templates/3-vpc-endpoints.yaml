@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Onward Logistics orders - private connectivity. Interface endpoints let Fargate
+  tasks pull images and write logs over the AWS network instead of a NAT gateway.
+  (The S3 gateway endpoint for image layers is in 1-network.)
+
+Parameters:
+  Project:
+    Type: String
+    Default: onward
+  Owner:
+    Type: String
+    Default: Jado Fils SEZIKEYE
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+
+Resources:
+  # ECR API: authentication and image manifests.
+  EcrApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: { 'Fn::ImportValue': !Sub '${Project}-${Environment}-network-VpcId' }
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: !Split [',', { 'Fn::ImportValue': !Sub '${Project}-${Environment}-network-PrivateSubnetIds' }]
+      SecurityGroupIds:
+        - { 'Fn::ImportValue': !Sub '${Project}-${Environment}-security-EndpointSecurityGroupId' }
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-ecr-api-vpce' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # ECR Docker registry: docker pull.
+  EcrDkrEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: { 'Fn::ImportValue': !Sub '${Project}-${Environment}-network-VpcId' }
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: !Split [',', { 'Fn::ImportValue': !Sub '${Project}-${Environment}-network-PrivateSubnetIds' }]
+      SecurityGroupIds:
+        - { 'Fn::ImportValue': !Sub '${Project}-${Environment}-security-EndpointSecurityGroupId' }
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-ecr-dkr-vpce' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # CloudWatch Logs: container stdout/stderr via the awslogs driver.
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: { 'Fn::ImportValue': !Sub '${Project}-${Environment}-network-VpcId' }
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: !Split [',', { 'Fn::ImportValue': !Sub '${Project}-${Environment}-network-PrivateSubnetIds' }]
+      SecurityGroupIds:
+        - { 'Fn::ImportValue': !Sub '${Project}-${Environment}-security-EndpointSecurityGroupId' }
+      Tags:
+        - { Key: Name, Value: !Sub '${Project}-${Environment}-orders-logs-vpce' }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Environment, Value: !Ref Environment }
+
+Outputs:
+  EcrApiEndpointId:
+    Value: !Ref EcrApiEndpoint
+  EcrDkrEndpointId:
+    Value: !Ref EcrDkrEndpoint
+  LogsEndpointId:
+    Value: !Ref LogsEndpoint

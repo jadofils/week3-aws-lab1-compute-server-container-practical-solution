@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Onward Logistics orders - cost guardrail. A monthly AWS budget that emails the
+  owner at 80% of actual spend and when forecast spend will exceed the limit.
+
+Parameters:
+  Project:
+    Type: String
+    Default: onward
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 200
+    Description: Monthly limit in USD. See docs/cost/README.md for the estimate behind it.
+  AlertEmail:
+    Type: String
+    Description: Address that receives budget alerts.
+    AllowedPattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+
+Resources:
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub '${Project}-${Environment}-orders-monthly-budget'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref AlertEmail }
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref AlertEmail }
+
+Outputs:
+  BudgetName:
+    Value: !Sub '${Project}-${Environment}-orders-monthly-budget'

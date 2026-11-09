@@ -1,0 +1,11 @@
+# GitSync stack deployment file for stack onward-dev-network.
+# Paths are relative to the infrastructure repository root.
+template-file-path: templates/1-network.yaml
+parameters:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
+tags:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev

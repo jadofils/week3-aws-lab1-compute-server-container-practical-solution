@@ -1,0 +1,13 @@
+# GitSync stack deployment file for stack onward-dev-budget.
+# Paths are relative to the infrastructure repository root.
+template-file-path: templates/8-budget.yaml
+parameters:
+  Project: onward
+  Environment: dev
+  MonthlyBudgetUsd: '200'
+  # TODO: replace with the address that should receive budget alerts.
+  AlertEmail: replace-me@example.com
+tags:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
