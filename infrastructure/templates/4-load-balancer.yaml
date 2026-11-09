@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Load-balancer child stack for the Onward Logistics Lab 1 environment.
+
+Parameters:
+  # Network and security resources created by earlier child stacks.
+  VpcId:
+    Type: String
+
+  PublicSubnetIds:
+    Type: CommaDelimitedList
+    Description: The two public subnets where the load balancer will run.
+
+  LoadBalancerSecurityGroupId:
+    Type: String
+
+  # Shared tags passed down from the root stack.
+  Project:
+    Type: String
+
+  Owner:
+    Type: String
+
+  Environment:
+    Type: String
+
+  # Ports used for public requests and traffic to the Spring Boot app.
+  PublicListenerPort:
+    Type: Number
+    Default: 80
+
+  ApplicationPort:
+    Type: Number
+    Default: 8080
+
+Resources:
+  # Public entry point for customers. It spans both public subnets.
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'onward-${Environment}-orders-alb'
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub 'onward-${Environment}-orders-alb'
+        - Key: Project
+          Value: !Ref Project
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Defines where the ALB sends requests and how it checks instance health.
+  ApplicationTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'onward-${Environment}-orders-tg'
+      VpcId: !Ref VpcId
+      TargetType: instance
+      Protocol: HTTP
+      Port: !Ref ApplicationPort
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health
+      Matcher:
+        HttpCode: '200'
+      Tags:
+        - Key: Name
+          Value: !Sub 'onward-${Environment}-orders-tg'
+        - Key: Project
+          Value: !Ref Project
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Listens for customer requests and forwards them to the target group.
+  # HTTP keeps the initial lab simple; HTTPS can be added once a domain/certificate is available.
+  PublicHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: !Ref PublicListenerPort
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ApplicationTargetGroup
+      Tags:
+        - Key: Project
+          Value: !Ref Project
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  # Share these values with the compute child stack and the final root stack.
+  LoadBalancerDnsName:
+    Description: Public DNS name customers use to reach the application.
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  LoadBalancerArn:
+    Description: ARN of the public Application Load Balancer.
+    Value: !Ref ApplicationLoadBalancer
+
+  TargetGroupArn:
+    Description: Target group that the Auto Scaling group will register instances with.
+    Value: !Ref ApplicationTargetGroup
