@@ -1,0 +1,28 @@
+# CloudFormation Git sync deployment file for stack "onward-dev-orders".
+# GitSync watches this file and the template on the main branch; merging a change here
+# (or to the template) updates the stack. Values not listed use the template defaults.
+template-file-path: infrastructure/template.yaml
+
+parameters:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
+
+  # Servers and scaling (Free Tier instance type; 2 servers normally, up to 6 on sales days)
+  InstanceType: t3.micro
+  MinSize: '2'
+  MaxSize: '6'
+  CpuTargetPercent: '50'
+
+  # Application release that every server downloads at launch.
+  # Change this to roll all servers onto a new version, one at a time.
+  AppVersion: v0.1.0
+
+  # Optional cost guardrail: set an address to create the monthly budget alert.
+  MonthlyBudgetUsd: '200'
+  BudgetAlertEmail: ''
+
+tags:
+  Project: onward
+  Owner: Jado Fils SEZIKEYE
+  Environment: dev
