@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "includeCoAuthoredBy": false,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "ask": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git branch -D:*)",
+      "Bash(git clean:*)",
+      "Bash(git stash:*)",
+      "Bash(git tag:*)",
+      "Bash(rm:*)",
+      "Bash(aws:*)",
+      "Bash(docker push:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh release:*)",
+      "PowerShell(git commit:*)",
+      "PowerShell(git push:*)",
+      "PowerShell(git reset:*)",
+      "PowerShell(Remove-Item:*)",
+      "PowerShell(aws:*)",
+      "PowerShell(docker push:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "PowerShell(git push --force:*)",
+      "PowerShell(git push -f:*)",
+      "Read(./**/.env)",
+      "Read(./**/*.pem)"
+    ]
+  }
+}
