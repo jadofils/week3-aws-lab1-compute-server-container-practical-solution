@@ -57,10 +57,33 @@ Display text (student name, lab name) and order limits are configured in `applic
 
 This is a learning demo, not a production order system. Its sample orders live only in memory on one server, are lost on restart, and are not shared across instances. Do not enter real customer information. A later production-style design would need shared durable storage and appropriate access controls.
 
-## Container and deployment artifacts
+## Tests
 
-- `Dockerfile` builds the Java 21 application and runs it as a non-root user.
-- `taskdef.json` and `appspec.yaml` are inputs for the CodePipeline ECS blue/green deployment action.
-- `build-and-push-ecr.yml` is the GitHub Actions workflow source. In the separate application repository, place it at `.github/workflows/build-and-push-ecr.yml` and configure `AWS_GITHUB_ACTIONS_ROLE_ARN`, `AWS_REGION`, and `ECR_REPOSITORY` repository variables. The AWS role trust must restrict GitHub OIDC to the exact repository and `main` branch.
+```powershell
+mvn verify
+```
 
-These files prepare the application side; the current CloudFormation templates are still the earlier EC2 draft and do not yet deploy this container to Fargate.
+The tests cover the validator rules, the in-memory repository limit, and the full HTTP contract: health, info (name and lab name), creating and listing orders, and error responses. They run in CI before any image is published.
+
+## Delivery (how a merge reaches customers)
+
+This folder is the root of the **application repository** (`onward-orders-app`).
+
+| File | Purpose |
+| --- | --- |
+| `.github/workflows/build-and-deploy.yml` | On a push to `main`: run the tests, sign in to AWS with **GitHub OIDC** (no stored keys), upload the deployment bundle to S3, then push the image to ECR as `:<commit-sha>` and `:release`. |
+| `Dockerfile` | Multi-stage build; runs as a non-root user; includes `curl` for the container health check. |
+| `taskdef.json` | ECS task definition template. `${AWS_ACCOUNT_ID}`, `${AWS_REGION}` and `${ENVIRONMENT}` are filled in by the workflow. `<IMAGE1_NAME>` is filled in by CodePipeline. |
+| `appspec.yaml` | Tells CodeDeploy which container and port receive traffic. `<TASK_DEFINITION>` is filled in by CodePipeline. |
+
+Pushing the `release` tag triggers EventBridge → CodePipeline → CodeDeploy blue/green (10% canary for 5 minutes, automatic rollback on alarms).
+
+Set these repository variables under *Settings → Secrets and variables → Actions → Variables*. None of them are secrets.
+
+| Variable | Value |
+| --- | --- |
+| `AWS_REGION` | `eu-west-1` |
+| `AWS_GITHUB_ACTIONS_ROLE_ARN` | Output `GitHubActionsRoleArn` of the `onward-dev-security-and-iam` stack |
+| `ENVIRONMENT` | `dev` (default) |
+
+Change task CPU and memory in `taskdef.json`, and keep `TaskCpu`/`TaskMemory` in the infrastructure's `6-ecs-service` deployment file the same.

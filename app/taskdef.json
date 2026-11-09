@@ -1,16 +1,21 @@
 {
-  "family": "onward-dev-orders",
+  "family": "onward-${ENVIRONMENT}-orders",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
   "cpu": "512",
   "memory": "1024",
-  "executionRoleArn": "<ECS_TASK_EXECUTION_ROLE_ARN>",
-  "taskRoleArn": "<ECS_TASK_ROLE_ARN>",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/onward-${ENVIRONMENT}-orders-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/onward-${ENVIRONMENT}-orders-task-role",
   "containerDefinitions": [
     {
       "name": "onward-orders",
       "image": "<IMAGE1_NAME>",
       "essential": true,
+      "readonlyRootFilesystem": false,
       "portMappings": [
         { "containerPort": 8080, "protocol": "tcp", "name": "http" }
       ],
@@ -24,11 +29,16 @@
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "<CLOUDWATCH_LOG_GROUP>",
-          "awslogs-region": "<AWS_REGION>",
+          "awslogs-group": "/ecs/onward-${ENVIRONMENT}-orders",
+          "awslogs-region": "${AWS_REGION}",
           "awslogs-stream-prefix": "orders"
         }
       }
     }
+  ],
+  "tags": [
+    { "key": "Project", "value": "onward" },
+    { "key": "Owner", "value": "Jado Fils SEZIKEYE" },
+    { "key": "Environment", "value": "${ENVIRONMENT}" }
   ]
 }
