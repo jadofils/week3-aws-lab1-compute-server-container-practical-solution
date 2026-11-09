@@ -1,0 +1,9 @@
+# Maven build output
+app/target/
+
+# VS Code workspace preferences
+.vscode/
+
+# Local environment and logs
+.env
+*.log
