@@ -9,3 +9,9 @@ app/target/
 *.log
 
 docs/source/*.docx
+
+# Claude Code local config and any Claude-named files
+.claude/
+*claude*
+*Claude*
+*CLAUDE*
