@@ -94,5 +94,11 @@ Each decision gives the choice, the business reason, and the alternatives reject
 ## D13. HTTP for the lab
 **Reason.** There is no domain or certificate for the lab. Production should add HTTPS with ACM and redirect HTTP to HTTPS.
 
+## D13b. Load balancer access logs are off
+**Reason.** ALB access logs must be written to an S3 bucket, and the lab design deliberately has no S3 bucket. Health, request counts and errors are still visible as CloudWatch load balancer metrics. Production should enable access logs to an encrypted S3 bucket with a retention policy, for audits.
+
+## D13c. Servers can never get a public IP
+**Reason.** The launch template sets `AssociatePublicIpAddress: false` on the server's network interface. It does not rely only on the private subnets' `MapPublicIpOnLaunch: false`, so a later subnet change cannot expose a server.
+
 ## D14. Orders in memory
 **Reason.** The brief is about compute and availability, not data. Shared, durable orders would need a database, which is a separate client decision with its own cost.
