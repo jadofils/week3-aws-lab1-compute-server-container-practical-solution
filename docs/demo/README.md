@@ -1,5 +1,24 @@
 # Live review: proving each client check
 
+## Quick way: one script in AWS CloudShell
+
+Open CloudShell in **eu-west-1**, then run:
+
+```bash
+git clone https://github.com/jadofils/week3-aws-lab1-compute-server-container-practical-solution.git
+cd week3-aws-lab1-compute-server-container-practical-solution
+./scripts/lab.sh deploy        # first time only: Git sync setup + stack (about 15 min)
+./scripts/lab.sh verify        # read-only: PASS/FAIL for every requirement
+./scripts/lab.sh scale         # CPU spike -> servers added -> servers removed
+./scripts/lab.sh fail-server   # terminate one server; the site stays up (asks first)
+./scripts/lab.sh fail-az       # terminate a whole AZ's servers; the site stays up (asks first)
+./scripts/lab.sh teardown      # delete everything to stop charges (asks first)
+```
+
+The sections below show the same checks as individual commands, so you can explain each one.
+
+## Step by step
+
 Use AWS CLI v2 with short-lived credentials, or AWS CloudShell. First set:
 
 ```bash

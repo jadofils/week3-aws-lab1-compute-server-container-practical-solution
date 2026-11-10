@@ -20,6 +20,7 @@ customers ──HTTP──▶ ALB (public subnets, 2 AZs)
 | [`app/`](app/README.md) | Spring Boot full-stack app: layered MVC backend, HTML/CSS/JS UI using AJAX, tests |
 | [`.github/workflows/release-app.yml`](.github/workflows/release-app.yml) | Tests the app and publishes the JAR as a GitHub Release, which the servers download at launch |
 | [`docs/`](docs/README.md) | Discovery report, architecture diagram, cost, decisions, live-review checks |
+| [`scripts/lab.sh`](scripts/lab.sh) | Run in AWS CloudShell: `deploy`, `verify` (PASS/FAIL for every requirement), `scale`, `fail-server`, `fail-az`, `teardown` |
 | [`scripts/watch-availability.sh`](scripts/watch-availability.sh) | Prints which server answered each request, so downtime is visible during failure tests |
 
 ## How it fits together
