@@ -16,7 +16,7 @@ PREFIX="onward-${ENVIRONMENT}"
 STACK="${PREFIX}-orders"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-echo "==> 1/4 Deploying the Git sync bootstrap stack (${PREFIX}-gitsync-bootstrap)"
+echo "==> 1/5 Deploying the Git sync bootstrap stack (${PREFIX}-gitsync-bootstrap)"
 aws cloudformation deploy \
   --stack-name "${PREFIX}-gitsync-bootstrap" \
   --template-file "${HERE}/gitsync-bootstrap.yaml" \
@@ -31,7 +31,7 @@ output() {
 CONNECTION_ARN="$(output ConnectionArn)"
 ROLE_ARN="$(output GitSyncRoleArn)"
 
-echo "==> 2/4 Approve the GitHub connection (one click, required by AWS)"
+echo "==> 2/5 Approve the GitHub connection (one click, required by AWS)"
 echo "    https://console.aws.amazon.com/codesuite/settings/connections?region=${REGION}"
 echo "    Choose '${PREFIX}-github' > Update pending connection > approve the GitHub app."
 until [ "$(aws codeconnections get-connection --connection-arn "$CONNECTION_ARN" \
@@ -39,7 +39,7 @@ until [ "$(aws codeconnections get-connection --connection-arn "$CONNECTION_ARN"
   sleep 15
 done
 
-echo "==> 3/4 Linking ${OWNER}/${REPO}"
+echo "==> 3/5 Linking ${OWNER}/${REPO}"
 LINK_ID="$(aws codeconnections list-repository-links \
   --query "RepositoryLinks[?OwnerId=='${OWNER}' && RepositoryName=='${REPO}'].RepositoryLinkId | [0]" --output text)"
 if [ -z "$LINK_ID" ] || [ "$LINK_ID" = "None" ]; then
@@ -48,7 +48,33 @@ if [ -z "$LINK_ID" ] || [ "$LINK_ID" = "None" ]; then
     --query RepositoryLinkInfo.RepositoryLinkId --output text)"
 fi
 
-echo "==> 4/4 Creating the Git sync configuration for stack ${STACK}"
+# Git sync configured through the API only updates an existing stack, so the first version
+# of the stack is created here from the same template and deployment file Git sync uses.
+DEPLOYMENT_FILE="$(cd "$HERE/.." && pwd)/deployment.yaml"
+TEMPLATE_FILE="$(cd "$HERE/.." && pwd)/template.yaml"
+
+# Reads "Key: value" lines from a section (parameters or tags) of the deployment file.
+section_pairs() {
+  sed -n "/^$1:/,/^[a-z-]*:/p" "$DEPLOYMENT_FILE" | sed '1d' \
+    | grep -E '^[[:space:]]+[A-Za-z0-9]+:' \
+    | sed -E "s/^[[:space:]]+([A-Za-z0-9]+):[[:space:]]*'?([^']*)'?[[:space:]]*$/\1=\2/"
+}
+
+echo "==> 4/5 Creating the first version of stack ${STACK} (about 10 minutes)"
+if aws cloudformation describe-stacks --stack-name "$STACK" >/dev/null 2>&1; then
+  echo "    stack already exists"
+else
+  mapfile -t PARAMS < <(section_pairs parameters)
+  mapfile -t TAGS < <(section_pairs tags)
+  aws cloudformation deploy \
+    --stack-name "$STACK" \
+    --template-file "$TEMPLATE_FILE" \
+    --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides "${PARAMS[@]}" \
+    --tags "${TAGS[@]}"
+fi
+
+echo "==> 5/5 Handing the stack to Git sync (every merge to ${BRANCH} now updates it)"
 if aws codeconnections get-sync-configuration --resource-name "$STACK" --sync-type CFN_STACK_SYNC >/dev/null 2>&1; then
   echo "    already configured"
 else
@@ -62,11 +88,6 @@ else
     --publish-deployment-status ENABLED \
     --trigger-resource-update-on FILE_CHANGE >/dev/null
 fi
-
-echo "    Waiting for ${STACK} (about 10 minutes: NAT gateway, load balancer, servers booting)..."
-until aws cloudformation describe-stacks --stack-name "$STACK" >/dev/null 2>&1; do sleep 15; done
-aws cloudformation wait stack-create-complete --stack-name "$STACK" 2>/dev/null \
-  || aws cloudformation wait stack-update-complete --stack-name "$STACK"
 
 echo "==> Done. Application URL:"
 aws cloudformation describe-stacks --stack-name "$STACK" \
