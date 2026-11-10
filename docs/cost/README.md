@@ -1,6 +1,8 @@
 # Cost: quiet day vs peak day (eu-west-1)
 
-These are approximate on-demand list prices for `eu-west-1`. Re-check each line in the [AWS Pricing Calculator](https://calculator.aws/) before relying on them. Taxes are excluded. **Free Tier:** depending on the account's plan, `t3.micro` hours may be free or covered by credits. The figures below assume **no** Free Tier, so they are the worst case.
+**[AWS Pricing Calculator estimate](https://calculator.aws/#/estimate?id=e196fec3f9bea1404644717d8585e2448b9f1083):** about **$131.47** for a quiet month and **$141.84** for a month with sales days. The per-service breakdown is in the [discovery report](../discovery-report/README.md#what-it-costs).
+
+The per-day working below uses approximate on-demand list prices for `eu-west-1`. Re-check each line in the [AWS Pricing Calculator](https://calculator.aws/) before relying on them. Taxes are excluded. **Free Tier:** depending on the account's plan, `t3.micro` hours may be free or covered by credits. The figures below assume **no** Free Tier, so they are the worst case.
 
 ## Per-day estimate
 

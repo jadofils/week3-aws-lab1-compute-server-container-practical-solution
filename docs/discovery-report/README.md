@@ -74,6 +74,27 @@ This suits Onward better than a fixed fleet because it pays for peak capacity on
 | AWS Budgets | Monthly budget with email alerts at 80% (actual) and 100% (forecast). | Spend is visible from day one (client standard). |
 | GitHub Actions + GitHub Releases | Tests the app and publishes the versioned JAR. | No laptop builds, and every server runs a known, tested version. |
 
+### What it costs
+
+**[Open the AWS Pricing Calculator estimate](https://calculator.aws/#/estimate?id=e196fec3f9bea1404644717d8585e2448b9f1083)** (Region `eu-west-1`, On-Demand, Free Tier not applied, taxes excluded).
+
+| Service | Configuration | Quiet month (USD) | Month with sales days (USD) |
+| --- | --- | ---: | ---: |
+| Amazon EC2: always-on servers | 2 × `t3.micro` Linux, 730 h, gp3 8 GB each, detailed monitoring | 22.25 | 22.25 |
+| Amazon EC2: extra sales-day servers | Up to 4 more `t3.micro` for about 4 sales days × 10 h (160 instance-hours), gp3 8 GB, detailed monitoring | 0.00 | 10.37 |
+| Application Load Balancer | 1 internet-facing ALB, about 15 GB processed per month | 24.24 | 24.24 |
+| Regional NAT Gateway | 1 gateway active in 2 Availability Zones | 70.18 | 70.18 |
+| Public IPv4 addresses | 4 in use: 2 for the ALB, 2 for the NAT gateway; servers have none | 14.60 | 14.60 |
+| Amazon CloudWatch | 2 standard alarms created by target tracking | 0.20 | 0.20 |
+| AWS Budgets | 1 monthly cost budget with email alerts | 0.00 | 0.00 |
+| **Total per month** | | **131.47** | **141.84** |
+
+- **A month with sales days costs about 8% more than a quiet month**, because the extra servers run only while CPU is high.
+- **Private connectivity** (the Regional NAT gateway and its public IPs) is about **$77 a month**, roughly 59% of the quiet-month bill. It is what lets private servers download updates while staying unreachable from the internet.
+- **Running six servers all month instead** would add about $33 a month for capacity that sits idle most days.
+
+The line-by-line working and the rejected alternatives are on the [cost page](../cost/README.md).
+
 ### Who benefits, and how you will know
 
 | Stakeholder | Benefit | How you would know |
