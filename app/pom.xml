@@ -13,7 +13,7 @@
 
     <groupId>com.onward</groupId>
     <artifactId>orders-demo</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <name>Onward Orders Demo</name>
     <description>Lab 1 full-stack order demo for Onward Logistics</description>
 

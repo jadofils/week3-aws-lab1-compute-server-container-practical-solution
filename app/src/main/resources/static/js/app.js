@@ -12,11 +12,31 @@ async function loadInfo() {
   }
 }
 
+// Each server keeps its own orders in memory and the load balancer spreads requests, so
+// every refresh may come from a different server. The page merges what it has seen from
+// all servers (by order ID) and shows the newest first.
+const ORDER_REFRESH_MS = 3000;
+const MAX_ORDERS_SHOWN = 50;
+const knownOrders = new Map();
+
+function mergeOrders(orders) {
+  for (const order of orders) knownOrders.set(order.id, order);
+}
+
+function renderKnownOrders() {
+  const newestFirst = [...knownOrders.values()]
+    .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt))
+    .slice(0, MAX_ORDERS_SHOWN);
+  view.renderOrders(newestFirst);
+}
+
 async function loadOrders() {
   try {
-    view.renderOrders(await api.listOrders());
+    mergeOrders(await api.listOrders());
+    renderKnownOrders();
   } catch (error) {
-    view.renderOrdersError(error.message);
+    if (!knownOrders.size) view.renderOrdersError(error.message);
+    // Otherwise keep showing what we have; the next refresh tries again.
   }
 }
 
@@ -26,10 +46,12 @@ async function submitOrder(event) {
   view.showMessage('Submitting order...');
   try {
     const order = await api.createOrder(view.readOrderForm());
+    // Show the new order immediately, whichever server answers the next refresh.
+    mergeOrders([order]);
+    renderKnownOrders();
     view.setServer(order.servedBy);
     view.showMessage(`Order ${order.id.slice(0, 8)} received by ${order.servedBy}.`, 'success');
     view.resetOrderForm();
-    await loadOrders();
   } catch (error) {
     view.showMessage(error.message, 'error');
   } finally {
@@ -109,3 +131,11 @@ view.spikeForm.addEventListener('submit', startSpike);
 view.stopButton.addEventListener('click', stopSpikes);
 loadInfo();
 loadOrders();
+
+// Keep the table current without reloading the page; skip refreshes while the tab is hidden.
+setInterval(() => {
+  if (!document.hidden) loadOrders();
+}, ORDER_REFRESH_MS);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) loadOrders();
+});
