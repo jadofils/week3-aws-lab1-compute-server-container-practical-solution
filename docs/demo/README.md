@@ -22,7 +22,11 @@ echo $URL
 
 ## 3. Rising demand adds servers, and the number shrinks again afterwards
 1. In the UI, **Sales-day CPU spike**: 420 seconds, 8 requests → **Start spike**. The results show the spike running on both servers.
-2. Watch the server list, and the dashboard (output `DashboardUrl`). Average CPU passes 50%, the desired capacity rises, and new instance IDs appear in the watcher within about 3 to 5 minutes. Click **Start spike** again so the new servers join the load.
+2. Watch the server list in the UI. Average CPU passes 50%, the desired capacity rises, and new instance IDs appear in the watcher within about 3 to 5 minutes. Click **Start spike** again so the new servers join the load. To follow the count from a terminal:
+   ```bash
+   watch -n 15 "aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $ASG \
+     --query 'AutoScalingGroups[0].[DesiredCapacity,length(Instances)]' --output text"
+   ```
 3. After the spike ends, or after **Stop spikes**, CPU falls and target tracking removes servers, back to 2 after roughly 10 to 15 minutes.
 4. Show the evidence:
    ```bash

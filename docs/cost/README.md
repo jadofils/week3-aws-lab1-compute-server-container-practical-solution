@@ -14,16 +14,14 @@ These are approximate on-demand list prices for `eu-west-1`. Re-check each line 
 | Regional NAT Gateway, hourly | $0.048 per hour **per active AZ** (2 AZs) | **$2.30** | **$2.30** |
 | NAT data processing | $0.048 per GB (updates and downloads, about 1 GB quiet, 2 GB peak) | **$0.05** | **$0.10** |
 | Public IPv4 addresses | $0.005 per hour each: 2 for the ALB, 2 for the NAT | **$0.48** | **$0.48** |
-| CloudWatch dashboard | $3 per month (first 3 dashboards are free) | **$0.10** | **$0.10** |
-| S3 gateway endpoint, release bucket, Lambda copier | Endpoint is free; about 25 MB stored per version; Lambda runs only on deploy | **< $0.01** | **< $0.01** |
-| **Total per day** | | **≈ $4.46** | **≈ $5.21** |
+| **Total per day** | | **≈ $4.36** | **≈ $5.11** |
 
-**Monthly (30 quiet days):** about **$134**. Each peak day adds about **$0.75**.
+**Monthly (30 quiet days):** about **$131**. Each peak day adds about **$0.75**.
 
 ### What this tells the Finance Lead
 
 - **A sales day costs only about 17% more than a quiet day**, because extra servers run only while they are needed.
-- **The fixed costs dominate:** the NAT gateway, the load balancer and the public IPs come to about $3.60 of the $4.46 quiet day. They buy the security model (private servers, one entry point) and resilience to losing a zone.
+- **The fixed costs dominate:** the NAT gateway, the load balancer and the public IPs come to about $3.60 of the $4.36 quiet day. They buy the security model (private servers, one entry point) and resilience to losing a zone.
 - **Running six servers all month instead** would add 4 × $0.0114 × 24 h ≈ $1.09 per day, or about $33 per month, for capacity that sits idle on 29 days out of 30.
 
 ## Alternatives considered on cost and resilience

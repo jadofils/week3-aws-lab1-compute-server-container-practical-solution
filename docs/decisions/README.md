@@ -43,21 +43,17 @@ Each decision gives the choice, the business reason, and the alternatives reject
 **Reason.** It meets "nobody should be opening admin ports". Servers use the AWS managed `AmazonSSMManagedInstanceCore` policy and reach Systems Manager through the NAT gateway. There are no SSH keys to lose, and sessions are tied to IAM identities.
 **Rejected.** A bastion host with SSH: a public server and keys to manage.
 
-## D7. The application is installed at boot from a private S3 copy of the GitHub Release
+## D7. The application is installed at boot from the latest GitHub Release
 **Reason.**
-- "Installed and started automatically when a server launches" means the user data must fetch a known build.
-- GitHub Actions tests and publishes each version as an immutable GitHub Release.
-- At **deploy time**, a small Lambda (custom resource) copies that release into a private, encrypted S3 bucket in the stack.
-- Every server launch, whether scale-out or self-healing replacement, reads the JAR from S3 through a free **S3 gateway endpoint**.
+- "Installed and started automatically when a server launches" means the user data must fetch a tested build.
+- GitHub Actions tests each change and publishes the JAR as a GitHub Release.
+- Every new server downloads the **latest** release over HTTPS through the NAT gateway. No AWS credentials are needed, because the repository is public.
+- There is no version pinning or rollback mechanism, which keeps the template small.
 
-**Why not download from GitHub on every launch?** Scale-out and replacement are exactly when the service needs new servers to come up. Depending on GitHub or the internet at that moment would be a single point of failure. With the S3 copy:
-- if GitHub is down during a deploy, the deploy fails cleanly and the running servers are untouched;
-- if GitHub is down later, servers still launch normally.
-
-Changing `AppVersion` copies the new JAR and rolls the servers one at a time.
+**Trade-off, stated honestly.** A server can only start while GitHub is reachable. `curl` retries for about a minute. If GitHub is down when Auto Scaling launches a server, that server fails its health check and is retried. The servers already running keep serving.
 
 **Rejected.**
-- Downloading from GitHub at every boot: an external dependency during failures.
+- A private S3 copy made at deploy time: more resources (bucket, Lambda, endpoint) than this lab needs.
 - An upload pipeline with AWS credentials in GitHub: more secrets to manage.
 - Building from source on each server: slow boots on `t3.micro`.
 - A custom AMI: an extra image pipeline.
@@ -73,16 +69,16 @@ Changing `AppVersion` copies the new JAR and rolls the servers one at a time.
 | --- | --- |
 | One server, or its app | Health checks pull it from the ALB, and Auto Scaling replaces it |
 | One Availability Zone | ALB nodes, the Regional NAT and servers also run in the other AZ; replacements launch there |
-| GitHub or the internet | New servers get the app from S3 through the gateway endpoint |
-| A bad release or a failed boot | `cfn-signal` and the rolling update stop the deploy; at least 2 servers stay in service |
+| A server fails to boot | `cfn-signal` holds the stack until the app answers; at least 2 servers stay in service |
 | Sudden demand | Target tracking adds servers up to 6, while the existing servers keep answering |
 
 **Not covered (stated honestly):**
 - Losing the whole Region.
 - In-memory orders on a failed server, which are lost. Durable orders need a database, which is a separate decision.
+- New servers need GitHub reachable to download the app (see D7). Running servers are not affected.
 
 ## D9. CreationPolicy and rolling UpdatePolicy with `cfn-signal`
-**Reason.** The stack counts as created only when the app actually answers on the minimum number of servers. Updates keep at least two servers in service and wait for each new server to signal healthy, so a broken release stops instead of taking down the service.
+**Reason.** The stack counts as created only when the app actually answers on the minimum number of servers. When the launch template changes (for example a new AMI or instance type), servers are replaced one at a time. At least two stay in service, and CloudFormation waits for each new server to signal healthy before continuing.
 
 ## D10. A spike trigger in the UI, bounded
 **Reason.** The brief asks for a secure way to trigger a load spike through a UI or secure remote access.

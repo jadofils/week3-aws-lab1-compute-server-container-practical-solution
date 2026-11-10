@@ -44,10 +44,7 @@ flowchart TB
   asg -. launches / replaces .-> ec2A & ec2B & ec2C
   ec2A & ec2B & ec2C -->|outbound HTTPS/HTTP only| nat
   nat --> igw
-  igw -->|security updates · Java · Systems Manager| internet([Internet: dnf repos, AWS APIs])
-  ec2A & ec2B & ec2C -->|app JAR| s3gw[["S3 gateway endpoint (free)"]]
-  s3gw --> bucket[("S3 release bucket (private)")]
-  copier["Lambda release copier<br/>(deploy time only)"] -->|GitHub Release JAR| bucket
+  igw -->|updates · Java · app release · Systems Manager| internet([Internet: dnf repos, GitHub Releases, AWS APIs])
 ```
 
 | | Public | Private |
@@ -72,7 +69,7 @@ sequenceDiagram
   C->>ALB: next request (e.g. "Which server is answering?" poll)
   ALB->>S2: forward
   S2-->>C: "answered by i-0bbb · eu-west-1b"
-  Note over ALB,S2: Health check GET /health every 15 s. Two failures remove a server from rotation.
+  Note over ALB,S2: Health check GET /health every 15 s. Three failures remove a server from rotation.
 ```
 
 ## 3. How capacity changes on a sales day
@@ -91,27 +88,23 @@ flowchart LR
 1. The launch template boots the latest **Amazon Linux 2023** AMI (resolved from the public SSM parameter) on `t3.micro`, with IMDSv2 required and an encrypted 8 GB gp3 disk.
 2. The user data:
    - installs security updates and Java 21 through the NAT gateway;
-   - copies `onward-orders.jar` for `AppVersion` from the **private S3 release bucket** through the **S3 gateway endpoint**, so this step needs no internet;
+   - downloads the **latest** `onward-orders.jar` from GitHub Releases through the NAT gateway;
    - runs the app as a `systemd` service that restarts on failure;
    - waits for `/health`, then sends `cfn-signal`.
-
-   The S3 copy is made once, at deploy time, by a small Lambda custom resource that downloads the GitHub Release. Launching or replacing a server therefore never depends on GitHub being available.
 3. The Auto Scaling group uses **ELB health checks**, so a server whose app stops answering is replaced, not just one whose hardware fails.
 
 ## 5. How changes are delivered
 
 ```mermaid
 flowchart LR
-  appchg[Merge app change] --> gha["GitHub Actions:<br/>mvn verify, publish release vX.Y.Z"]
-  infchg["Merge change to infrastructure/<br/>(e.g. AppVersion: vX.Y.Z)"] --> gs[CloudFormation Git sync]
+  appchg[Merge app change] --> gha["GitHub Actions:<br/>mvn verify, publish latest release"]
+  gha -. installed by .-> boot["Every new server<br/>(scale-out or replacement)"]
+  infchg[Merge change to infrastructure/] --> gs[CloudFormation Git sync]
   gs --> stack["Stack onward-dev-orders updated"]
-  stack --> roll["Rolling update: one server at a time,<br/>min 2 in service, waits for cfn-signal"]
-  gha -. release used by .-> roll
 ```
 
 ## 6. Failure behaviour
 
 - **A server dies, or its app stops.** The ALB stops sending to it after three failed health checks (about 45 seconds). Auto Scaling terminates it and launches a replacement.
-- **GitHub or the internet is unavailable.** New servers still install the app from the private S3 copy through the gateway endpoint.
 - **A whole Availability Zone is lost.** The server in the other zone keeps answering through the ALB node in that zone. Auto Scaling launches replacements in the healthy zone, and the Regional NAT keeps serving the surviving zone.
 - **Load drops after a sale.** Target tracking removes servers gradually, back to the minimum of 2.

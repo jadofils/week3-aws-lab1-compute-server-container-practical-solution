@@ -16,7 +16,7 @@
         <mxCell id="github" value="GitHub repository&lt;br&gt;&lt;i&gt;app/ · infrastructure/&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=11;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="15" y="640" width="120" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="gha" value="GitHub Actions&lt;br&gt;&lt;i&gt;test + publish release&lt;br&gt;onward-orders.jar vX.Y.Z&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="gha" value="GitHub Actions&lt;br&gt;&lt;i&gt;test + publish latest&lt;br&gt;release onward-orders.jar&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=11;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="15" y="760" width="120" height="64" as="geometry" />
         </mxCell>
         <mxCell id="cloud" value="AWS Cloud" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=1;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;verticalAlign=top;align=left;spacingLeft=30;dashed=0;grIcon=mxgraph.aws4.group_aws_cloud_alt;strokeColor=#232F3E;fillColor=none;fontColor=#232F3E;" vertex="1" parent="1">
@@ -58,10 +58,10 @@
         <mxCell id="rtPubB" value="&lt;b&gt;Route table:&lt;/b&gt; 0.0.0.0/0 &amp;#8594; internet gateway" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=#232F3E;" vertex="1" parent="pubB">
           <mxGeometry x="145" y="113" width="200" height="22" as="geometry" />
         </mxCell>
-        <mxCell id="rtPrivA" value="&lt;b&gt;Route table:&lt;/b&gt; 0.0.0.0/0 &amp;#8594; Regional NAT (outbound only) · S3 &amp;#8594; gateway endpoint · no inbound route from the internet" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=#232F3E;" vertex="1" parent="privA">
+        <mxCell id="rtPrivA" value="&lt;b&gt;Route table:&lt;/b&gt; 0.0.0.0/0 &amp;#8594; Regional NAT (outbound only) · no inbound route from the internet" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=#232F3E;" vertex="1" parent="privA">
           <mxGeometry x="7" y="23" width="336" height="34" as="geometry" />
         </mxCell>
-        <mxCell id="rtPrivB" value="&lt;b&gt;Route table:&lt;/b&gt; 0.0.0.0/0 &amp;#8594; Regional NAT (outbound only) · S3 &amp;#8594; gateway endpoint · no inbound route from the internet" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=#232F3E;" vertex="1" parent="privB">
+        <mxCell id="rtPrivB" value="&lt;b&gt;Route table:&lt;/b&gt; 0.0.0.0/0 &amp;#8594; Regional NAT (outbound only) · no inbound route from the internet" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=#232F3E;" vertex="1" parent="privB">
           <mxGeometry x="7" y="23" width="336" height="34" as="geometry" />
         </mxCell>
         <mxCell id="alb" value="&lt;b&gt;Application Load Balancer&lt;/b&gt;&lt;br&gt;onward-dev-orders-alb · internet-facing&lt;br&gt;the ONLY public entry · listener HTTP :80" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.application_load_balancer;fillColor=#8C4FFF;" vertex="1" parent="vpc">
@@ -82,19 +82,10 @@
         <mxCell id="asg" value="Auto Scaling group onward-dev-orders-asg · min 2 · max 6 · target tracking: avg CPU 50%" style="points=[];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=1;shape=mxgraph.aws4.groupCenter;grIcon=mxgraph.aws4.group_auto_scaling_group;grStroke=1;strokeColor=#D86613;fillColor=none;verticalAlign=top;align=center;fontColor=#D86613;dashed=1;spacingTop=25;container=0;" vertex="1" parent="vpc">
           <mxGeometry x="115" y="390" width="755" height="255" as="geometry" />
         </mxCell>
-        <mxCell id="s3gw" value="&lt;b&gt;S3 gateway endpoint&lt;/b&gt; (free) · app JAR stays on AWS network" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.endpoints;fillColor=#8C4FFF;" vertex="1" parent="vpc">
-          <mxGeometry x="461" y="692" width="48" height="48" as="geometry" />
-        </mxCell>
-        <mxCell id="copier" value="&lt;b&gt;Lambda release copier&lt;/b&gt;&lt;br&gt;runs at deploy time only:&lt;br&gt;GitHub Release &amp;#8594; S3" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.lambda_function;fillColor=#ED7100;" vertex="1" parent="region">
-          <mxGeometry x="240" y="860" width="48" height="48" as="geometry" />
-        </mxCell>
-        <mxCell id="bucket" value="&lt;b&gt;S3 release bucket&lt;/b&gt;&lt;br&gt;onward-dev-orders-releases-…&lt;br&gt;private · encrypted · TLS only" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.bucket;fillColor=#7AA116;" vertex="1" parent="region">
-          <mxGeometry x="630" y="860" width="48" height="48" as="geometry" />
-        </mxCell>
         <mxCell id="cfn" value="&lt;b&gt;CloudFormation + Git sync&lt;/b&gt;&lt;br&gt;template.yaml +&lt;br&gt;deployment.yaml" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudformation;fillColor=#E7157B;" vertex="1" parent="region">
           <mxGeometry x="1020" y="60" width="64" height="64" as="geometry" />
         </mxCell>
-        <mxCell id="cw" value="&lt;b&gt;CloudWatch&lt;/b&gt;&lt;br&gt;1-min CPU metrics,&lt;br&gt;scaling alarms, dashboard" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;fillColor=#E7157B;" vertex="1" parent="region">
+        <mxCell id="cw" value="&lt;b&gt;CloudWatch&lt;/b&gt;&lt;br&gt;1-min CPU metrics,&lt;br&gt;scaling alarms" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;fillColor=#E7157B;" vertex="1" parent="region">
           <mxGeometry x="1020" y="240" width="64" height="64" as="geometry" />
         </mxCell>
         <mxCell id="ssm" value="&lt;b&gt;Systems Manager&lt;/b&gt;&lt;br&gt;Session Manager&lt;br&gt;(no SSH, no open ports)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.systems_manager;fillColor=#E7157B;" vertex="1" parent="region">
@@ -103,10 +94,10 @@
         <mxCell id="iam" value="&lt;b&gt;IAM role&lt;/b&gt;&lt;br&gt;AmazonSSMManagedInstanceCore&lt;br&gt;(managed policy, no inline)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;fillColor=#DD344C;" vertex="1" parent="region">
           <mxGeometry x="1020" y="600" width="64" height="64" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="&lt;b&gt;Traffic and change flow&lt;/b&gt;&lt;br&gt;&amp;#9312; Customers reach the ALB on HTTP :80 - the only public entry point.&lt;br&gt;&amp;#9313; ALB shares requests round robin across healthy servers in both AZs; /health every 15 s.&lt;br&gt;&amp;#9314; Servers have no public IP; the server security group admits :8080 from the ALB only.&lt;br&gt;&amp;#9315; Outbound only via the Regional NAT: security updates, Java, app release download, SSM.&lt;br&gt;&amp;#9316; Average CPU above 50% &amp;#8594; Auto Scaling adds servers (max 6); below &amp;#8594; removes them (min 2).&lt;br&gt;&amp;#9317; A failed server or AZ is replaced automatically (ELB health checks).&lt;br&gt;&amp;#9318; Merge to main &amp;#8594; Git sync updates the stack; new AppVersion rolls servers one at a time.&lt;br&gt;&amp;#9319; At deploy, Lambda copies the release JAR to S3; every server launch reads it via the S3 gateway endpoint.&lt;br&gt;&lt;i&gt;Tags on every resource: Project=onward · Owner=Jado Fils SEZIKEYE · Environment=dev&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E6;strokeColor=#D6B656;fontSize=11;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;arcSize=4;" vertex="1" parent="1">
+        <mxCell id="legend" value="&lt;b&gt;Traffic and change flow&lt;/b&gt;&lt;br&gt;&amp;#9312; Customers reach the ALB on HTTP :80 - the only public entry point.&lt;br&gt;&amp;#9313; ALB shares requests round robin across healthy servers in both AZs; /health every 15 s.&lt;br&gt;&amp;#9314; Servers have no public IP; the server security group admits :8080 from the ALB only.&lt;br&gt;&amp;#9315; Outbound only via the Regional NAT: security updates, Java, latest app release, SSM.&lt;br&gt;&amp;#9316; Average CPU above 50% &amp;#8594; Auto Scaling adds servers (max 6); below &amp;#8594; removes them (min 2).&lt;br&gt;&amp;#9317; A failed server or AZ is replaced automatically (ELB health checks).&lt;br&gt;&amp;#9318; Merge to main &amp;#8594; Git sync updates the stack; new servers install the latest app release.&lt;br&gt;&lt;i&gt;Tags on every resource: Project=onward · Owner=Jado Fils SEZIKEYE · Environment=dev&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E6;strokeColor=#D6B656;fontSize=11;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;arcSize=4;" vertex="1" parent="1">
           <mxGeometry x="170" y="1100" width="760" height="170" as="geometry" />
         </mxCell>
-        <mxCell id="resilience" value="&lt;b&gt;If one part fails, the service keeps running&lt;/b&gt;&lt;br&gt;&lt;b&gt;Server dies / app hangs&lt;/b&gt; &amp;#8594; 3 failed /health checks, ALB stops routing, Auto Scaling replaces it.&lt;br&gt;&lt;b&gt;Availability Zone lost&lt;/b&gt; &amp;#8594; ALB, Regional NAT and servers also run in the other AZ; replacements launch there.&lt;br&gt;&lt;b&gt;Sales-day surge&lt;/b&gt; &amp;#8594; CPU &amp;gt; 50% adds servers (max 6); busy servers are not mistaken for failed ones.&lt;br&gt;&lt;b&gt;GitHub or internet down&lt;/b&gt; &amp;#8594; new servers still get the app from S3 through the gateway endpoint.&lt;br&gt;&lt;b&gt;Bad release / boot failure&lt;/b&gt; &amp;#8594; cfn-signal + rolling update stop the deploy; 2 servers stay in service." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=11;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;arcSize=4;" vertex="1" parent="1">
+        <mxCell id="resilience" value="&lt;b&gt;If one part fails, the service keeps running&lt;/b&gt;&lt;br&gt;&lt;b&gt;Server dies / app hangs&lt;/b&gt; &amp;#8594; 3 failed /health checks, ALB stops routing, Auto Scaling replaces it.&lt;br&gt;&lt;b&gt;Availability Zone lost&lt;/b&gt; &amp;#8594; ALB, Regional NAT and servers also run in the other AZ; replacements launch there.&lt;br&gt;&lt;b&gt;Sales-day surge&lt;/b&gt; &amp;#8594; CPU &amp;gt; 50% adds servers (max 6); busy servers are not mistaken for failed ones.&lt;br&gt;&lt;b&gt;Server fails to boot&lt;/b&gt; &amp;#8594; cfn-signal holds the stack until the app answers; 2 servers stay in service." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=11;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;arcSize=4;" vertex="1" parent="1">
           <mxGeometry x="950" y="1100" width="480" height="170" as="geometry" />
         </mxCell>
         <mxCell id="e1" value="&amp;#9312; HTTP :80" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#232F3E;strokeWidth=2;" edge="1" parent="1" source="users" target="igw">
@@ -130,22 +121,7 @@
         <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#7AA116;dashed=1;" edge="1" parent="1" source="nat" target="igw">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e8" value="security updates · Java · SSM" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#7AA116;dashed=1;" edge="1" parent="1" source="igw" target="internet">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e15" value="&amp;#9319; app JAR" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#7AA116;" edge="1" parent="1" source="ec2A" target="s3gw">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e16" value="&amp;#9319; app JAR" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#7AA116;" edge="1" parent="1" source="ec2B" target="s3gw">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e17" value="AWS network" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#7AA116;" edge="1" parent="1" source="s3gw" target="bucket">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e18" value="&amp;#9319; release JAR&lt;br&gt;(deploy time)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#ED7100;dashed=1;" edge="1" parent="1" source="github" target="copier">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e19" value="put object" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#ED7100;dashed=1;" edge="1" parent="1" source="copier" target="bucket">
+        <mxCell id="e8" value="updates · Java · app JAR · SSM" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#7AA116;dashed=1;" edge="1" parent="1" source="igw" target="internet">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e9" value="&amp;#9316; avg CPU &amp;gt; 50%&lt;br&gt;scale out / in" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#E7157B;dashed=1;" edge="1" parent="1" source="cw" target="asg">
@@ -160,7 +136,7 @@
         <mxCell id="e12" value="creates / updates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#E7157B;dashed=1;" edge="1" parent="1" source="cfn" target="vpc">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e13" value="release vX.Y.Z" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#666666;dashed=1;" edge="1" parent="1" source="gha" target="github">
+        <mxCell id="e13" value="latest release" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#666666;dashed=1;" edge="1" parent="1" source="gha" target="github">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e14" value="instance profile" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;strokeColor=#DD344C;dashed=1;endArrow=open;" edge="1" parent="1" source="iam" target="asg">

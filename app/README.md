@@ -53,8 +53,6 @@ mvn verify            # 18 tests: validator, repository, CPU spike limits, IMDSv
 
 ## Release
 
-`.github/workflows/release-app.yml` runs the tests on every change. On `main` it publishes `target/onward-orders.jar` as the GitHub Release `v<version from pom.xml>`. To ship a new version:
-1. Bump `<version>` in `pom.xml` and merge.
-2. Set `AppVersion` in `infrastructure/deployment.yaml` to the new tag and merge.
+`.github/workflows/release-app.yml` runs the tests on every change. On `main` it publishes `target/onward-orders.jar` as the GitHub Release `v<version from pom.xml>`. Each new version must have a new `<version>` in `pom.xml`.
 
-Git sync copies the new JAR into the private S3 release bucket, then replaces the servers one at a time, keeping at least two in service. Servers install the app from S3, never directly from GitHub.
+Every server installs the **latest** release when it launches, from `https://github.com/<owner>/<repo>/releases/latest/download/onward-orders.jar`. Servers that are already running keep their version until they are replaced.

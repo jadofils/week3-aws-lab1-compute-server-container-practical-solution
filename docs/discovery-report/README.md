@@ -66,14 +66,13 @@ This suits Onward better than a fixed fleet because it pays for peak capacity on
 | Application Load Balancer | The single public address. Shares requests round robin across healthy servers and health-checks `/health` every 15 seconds. | Customers never see an unhealthy server, and the address never changes as servers come and go. |
 | Amazon EC2 (Free Tier `t3.micro`, Amazon Linux 2023) | Runs the order app. A launch template installs and starts it automatically at boot. | The required compute; Free Tier keeps the quiet-day cost low; every server is identical. |
 | EC2 Auto Scaling + target tracking | Keeps 2–6 servers, holds average CPU near 50%, and replaces unhealthy servers. | Grows on sales days and shrinks afterwards with nobody adjusting anything (CTO, Head of Operations). |
-| Regional NAT Gateway | Outbound-only internet for the private servers: security updates, Java and Session Manager. | One gateway that AWS runs in each zone in use, so updates keep working if a zone fails, and inbound connections are impossible. |
+| Regional NAT Gateway | Outbound-only internet for the private servers: security updates, Java, the app download and Session Manager. | One gateway that AWS runs in each zone in use, so updates keep working if a zone fails, and inbound connections are impossible. |
 | AWS Systems Manager Session Manager | Shell access to servers without SSH keys or open ports, through the outbound connection. | Meets "nobody should be opening admin ports to fix them". Sessions are logged with IAM identity. |
 | AWS IAM (role + AWS managed policy) | Gives servers only the Session Manager permission. | Least privilege, no inline policies (client standard). |
-| Amazon CloudWatch (detailed monitoring + dashboard) | 1-minute CPU metrics for faster scaling; one dashboard showing servers, CPU, requests and errors. | Lets operations watch capacity change live. |
+| Amazon CloudWatch (detailed monitoring) | 1-minute CPU metrics that drive the scaling alarms. | Scaling reacts within minutes, not after 5-minute periods. |
 | AWS CloudFormation + Git sync | The whole environment in one template, deployed from Git on every merge. | Nothing is clicked in the console, every change is reviewed, and it can be rebuilt from the repository. |
 | AWS Budgets | Monthly budget with email alerts at 80% (actual) and 100% (forecast). | Spend is visible from day one (client standard). |
 | GitHub Actions + GitHub Releases | Tests the app and publishes the versioned JAR. | No laptop builds, and every server runs a known, tested version. |
-| Amazon S3 + S3 gateway endpoint + AWS Lambda | At deploy time, Lambda copies the release into a private S3 bucket. Servers install it through the free gateway endpoint. | New servers never depend on GitHub or the internet to get the app, so self-healing and scale-out still work if either is unavailable. |
 
 ### Who benefits, and how you will know
 
@@ -81,7 +80,7 @@ This suits Onward better than a fixed fleet because it pays for peak capacity on
 | --- | --- | --- |
 | Chief Technology Officer | Sales-day load is absorbed automatically, and extra capacity is removed afterwards. | During a CPU spike the group's desired capacity rises from 2 towards 6, then falls back to 2. The scaling history shows each change with no human action. |
 | Head of Security | One public entry point. Servers are unreachable from the internet, and no admin ports are open. | Instances have no public IP. The server security group allows only port 8080 from the load balancer. Session Manager works with port 22 closed. |
-| Head of Operations | Failed servers and lost zones are handled automatically, and the answering server is visible. | Terminate a server: the page keeps answering and a replacement appears. The "which server is answering" panel and the dashboard show servers joining and leaving. |
+| Head of Operations | Failed servers and lost zones are handled automatically, and the answering server is visible. | Terminate a server: the page keeps answering and a replacement appears. The "which server is answering" panel shows servers joining and leaving. |
 | Finance Lead | Pays for peak capacity only during the peak, with costs explained. | The [cost page](../cost/README.md) compares a quiet day and a peak day, line by line. Budget alerts arrive at 80% of the limit. |
 | Merchants and customers | Fast, reliable ordering during sales. | No load balancer 5xx errors during the spike test; response times stay steady while servers are added. |
 
@@ -92,4 +91,5 @@ This suits Onward better than a fixed fleet because it pays for peak capacity on
 - **HTTP only** for the lab. Production needs an HTTPS listener with an ACM certificate.
 - **The NAT gateway is a fixed hourly cost** even on quiet days, and it is the largest line item after the load balancer.
 - **Region failure is not covered.** The design survives losing one zone, not the whole Region.
+- **New servers download the app from GitHub.** If GitHub is unreachable when Auto Scaling launches a server, that server can't start until GitHub is back. Servers already running are not affected.
 - **Free Tier depends on the account.** Eligibility for `t3.micro` hours depends on the account's Free Tier plan; outside it, the normal hourly price applies.

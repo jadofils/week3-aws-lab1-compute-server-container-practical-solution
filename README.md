@@ -14,7 +14,7 @@ customers ──HTTP──▶ ALB (public subnets, 2 AZs)
 
 | Path | What it is |
 | --- | --- |
-| [`infrastructure/template.yaml`](infrastructure/template.yaml) | The whole environment: VPC, Regional NAT, ALB, launch template, Auto Scaling, dashboard and budget |
+| [`infrastructure/template.yaml`](infrastructure/template.yaml) | The whole environment: VPC, Regional NAT, ALB, launch template, Auto Scaling and budget |
 | [`infrastructure/deployment.yaml`](infrastructure/deployment.yaml) | The Git sync deployment file: which template, which parameter values, which tags |
 | [`infrastructure/bootstrap/`](infrastructure/bootstrap) | One-time Git sync setup (the GitHub connection and the sync role) |
 | [`app/`](app/README.md) | Spring Boot full-stack app: layered MVC backend, HTML/CSS/JS UI using AJAX, tests |
@@ -26,9 +26,9 @@ customers ──HTTP──▶ ALB (public subnets, 2 AZs)
 
 1. **Merge app code to `main`.** GitHub Actions runs the tests and publishes `onward-orders.jar` as the release `v<version>`.
 2. **Merge to `infrastructure/`.** Git sync updates the CloudFormation stack `onward-dev-orders`.
-3. **At deploy time, a small Lambda copies the release into a private S3 bucket.** Each server boots from the launch template:
-   - it installs security updates and Java through the NAT gateway;
-   - it copies the JAR from S3 through a free gateway endpoint, which needs no internet;
+3. **Each server boots from the launch template.** Through the NAT gateway:
+   - it installs security updates and Java;
+   - it downloads the latest release JAR from GitHub;
    - it starts the app as a `systemd` service;
    - it signals CloudFormation once `/health` answers.
 4. **CPU rises above 50%.** Target tracking adds servers, up to 6. When the load drops, it removes them again, down to 2.
