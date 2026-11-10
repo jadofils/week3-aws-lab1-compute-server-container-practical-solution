@@ -485,8 +485,14 @@ Resources:
         InstanceType: !Ref InstanceType
         IamInstanceProfile:
           Arn: !GetAtt ServerInstanceProfile.Arn
-        SecurityGroupIds:
-          - !Ref ServerSecurityGroup
+        # Servers never get a public IP, even if a subnet setting changes later.
+        # The Auto Scaling group chooses the private subnet for each server.
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: false
+            DeleteOnTermination: true
+            Groups:
+              - !Ref ServerSecurityGroup
         # 1-minute CPU metrics so scaling reacts within minutes, not after 5-minute periods.
         Monitoring:
           Enabled: true
