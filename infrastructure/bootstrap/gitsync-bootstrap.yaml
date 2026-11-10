@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Onward Logistics - one-time Git sync bootstrap, deployed once by setup-gitsync.sh.
+  Onward Logistics - one-time Git sync bootstrap, deployed once from the CloudFormation console.
   Creates the GitHub connection and the role CloudFormation Git sync uses to deploy
   infrastructure/template.yaml. Nothing here runs the application.
 
