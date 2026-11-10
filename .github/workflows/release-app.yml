@@ -1,12 +1,10 @@
 # Tests the order application and publishes the runnable JAR as a GitHub Release.
 #
-# At deploy time a Lambda in infrastructure/template.yaml copies this JAR into a private S3
-# bucket; EC2 servers install it from there. No AWS credentials are stored in GitHub: the
-# repository is public and the release asset is read over HTTPS.
+# EC2 servers download the latest release at launch (user data in infrastructure/template.yaml)
+# through the Regional NAT Gateway. No AWS credentials are stored in GitHub: the repository
+# is public and the release asset is read over HTTPS.
 #
-# To release a new version: bump <version> in app/pom.xml, merge to main, then set
-# AppVersion in infrastructure/deployment.yaml to the new tag (for example v0.2.0).
-# GitSync then rolls the Auto Scaling group onto the new version one server at a time.
+# To publish a new version, change <version> in app/pom.xml and merge to main.
 name: Test and release order app
 
 on:
