@@ -4,7 +4,7 @@
 #
 # Usage:  AWS_REGION=eu-west-1 ./infrastructure/bootstrap/setup-gitsync.sh [github-owner] [repository] [environment] [branch]
 # Needs:  AWS CLI v2 signed in with short-lived admin credentials (for example IAM Identity Center),
-#         and the app release (v0.1.0) already published by the GitHub Actions workflow.
+#         and at least one app release already published by the GitHub Actions workflow.
 set -euo pipefail
 
 OWNER="${1:-jadofils}"

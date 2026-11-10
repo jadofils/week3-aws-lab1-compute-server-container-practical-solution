@@ -14,10 +14,6 @@ parameters:
   MaxSize: '6'
   CpuTargetPercent: '50'
 
-  # Application release that every server downloads at launch.
-  # Change this to roll all servers onto a new version, one at a time.
-  AppVersion: v0.1.0
-
   # Cost guardrail: monthly budget emails at 80% actual and 100% forecast spend.
   MonthlyBudgetUsd: '200'
   BudgetAlertEmail: sezikeyejadofils100@gmail.com
