@@ -44,7 +44,7 @@ Onward Logistics needs its order system to stay fast and available when sales-da
 
 ## 2. The business value of This solution
 
-### Your chosen approach
+### The chosen approach
 
 **EC2 Auto Scaling across two Availability Zones, behind one internet-facing Application Load Balancer, with CPU target tracking.**
 
