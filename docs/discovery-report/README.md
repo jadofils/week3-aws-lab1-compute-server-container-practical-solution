@@ -42,7 +42,7 @@ Onward Logistics needs its order system to stay fast and available when sales-da
 - [CloudFormation Git sync](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/git-sync.html)
 - [AWS Pricing Calculator](https://calculator.aws/)
 
-## 2. The business value of your solution
+## 2. The business value of This solution
 
 ### Your chosen approach
 
@@ -105,7 +105,7 @@ The line-by-line working and the rejected alternatives are on the [cost page](..
 | Finance Lead | Pays for peak capacity only during the peak, with costs explained. | The [cost page](../cost/README.md) compares a quiet day and a peak day, line by line. Budget alerts arrive at 80% of the limit. |
 | Merchants and customers | Fast, reliable ordering during sales. | No load balancer 5xx errors during the spike test; response times stay steady while servers are added. |
 
-### Limits and risks of your design
+### Limits and risks of This design
 
 - **Scaling takes minutes.** A new server needs about 2–4 minutes to boot and pass health checks. A very sudden surge is absorbed by the two running servers until the new ones arrive. Raising `MinSize` before a known sale (or adding a scheduled action) closes that gap.
 - **Orders are in memory per server** in this demonstration. They are lost when a server is replaced and are not shared. Real orders need a shared database, which is a separate decision and cost.
